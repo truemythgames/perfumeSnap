@@ -74,8 +74,8 @@ export default function ResultScreen() {
   const onTransitionDone = useCallback(() => setShowResult(true), []);
 
   useEffect(() => {
-    bgOpacity.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
-    progress.value = withTiming(1, { duration: 700, easing: Easing.out(Easing.cubic) });
+    bgOpacity.value = withTiming(1, { duration: 900, easing: Easing.out(Easing.quad) });
+    progress.value = withTiming(1, { duration: 1100, easing: Easing.out(Easing.cubic) });
     frameRotate.value = withDelay(
       600,
       withTiming(-1.5, { duration: 500, easing: Easing.out(Easing.quad) }),
