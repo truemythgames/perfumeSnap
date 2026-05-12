@@ -8,7 +8,10 @@ import {
   TouchableOpacity,
   Dimensions,
   Platform,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -21,11 +24,12 @@ import Animated, {
   withDelay,
   withSpring,
   withRepeat,
+  withSequence,
   Easing,
   interpolate,
   runOnJS,
 } from 'react-native-reanimated';
-import { identifyPerfume, getApiUrl, PerfumeResult } from '../services/api';
+import { identifyPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage } from '../services/api';
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
@@ -54,6 +58,9 @@ export default function ResultScreen() {
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [showResult, setShowResult] = useState(false);
+  const [photoFullscreen, setPhotoFullscreen] = useState(false);
+  const [savedToCollection, setSavedToCollection] = useState(false);
+  const [saving, setSaving] = useState(false);
   const insets = useSafeAreaInsets();
 
   const cameraCardTop = insets.top + 48;
@@ -61,6 +68,12 @@ export default function ResultScreen() {
   const frameOuterH = FRAME_HEIGHT + FRAME_PADDING * 2;
   const finalX = (SCREEN_WIDTH - frameOuterW) / 2;
   const finalY = SCREEN_HEIGHT * 0.18;
+
+  const heroW = SCREEN_WIDTH * 0.6;
+  const heroH = heroW * 1.3;
+  const heroAreaH = SCREEN_WIDTH * 0.9;
+  const heroX = (SCREEN_WIDTH - heroW) / 2;
+  const heroY = (heroAreaH - heroH) / 2;
 
   const progress = useSharedValue(0);
   const bgOpacity = useSharedValue(0);
@@ -70,6 +83,7 @@ export default function ResultScreen() {
   const stepsOpacity = useSharedValue(0);
   const transitionProgress = useSharedValue(0);
   const spinnerRotation = useSharedValue(0);
+  const shineRotation = useSharedValue(0);
 
   const onTransitionDone = useCallback(() => setShowResult(true), []);
 
@@ -97,6 +111,15 @@ export default function ResultScreen() {
     );
     spinnerRotation.value = withRepeat(
       withTiming(1, { duration: 1000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    // Slow vertical sweep top→bottom, pause, repeat.
+    shineRotation.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2800, easing: Easing.inOut(Easing.ease) }),
+        withDelay(2200, withTiming(0, { duration: 1 })),
+      ),
       -1,
       false,
     );
@@ -179,14 +202,26 @@ export default function ResultScreen() {
     try {
       const base64 = await readAsBase64(imageUri!);
       const perfume = await identifyPerfume(base64);
-      if (!perfume.identified) {
-        apiResult.current = { error: 'Could not identify this perfume. Try a clearer photo of the bottle or label.' };
-      } else {
-        apiResult.current = { perfume };
-      }
+      apiResult.current = { perfume };
     } catch (err: any) {
       apiResult.current = { error: err.message || 'Something went wrong. Please try again.' };
     }
+  };
+
+  const handleSave = async () => {
+    if (!result || savedToCollection || saving) return;
+    setSaving(true);
+    try {
+      const uploaded = await uploadImage(imageUri!);
+      await addToCollection(result, { imageKey: uploaded.key });
+    } catch {
+      try {
+        await addToCollection(result, { imageUri });
+      } catch {}
+    }
+    setSavedToCollection(true);
+    setSaving(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   const bgStyle = useAnimatedStyle(() => ({
@@ -199,15 +234,20 @@ export default function ResultScreen() {
 
   const frameAnimStyle = useAnimatedStyle(() => {
     const p = progress.value;
-    const left = interpolate(p, [0, 1], [CAMERA_CARD_LEFT, finalX]);
-    const top = interpolate(p, [0, 1], [cameraCardTop, finalY]);
-    const w = interpolate(p, [0, 1], [CAMERA_CARD_WIDTH, frameOuterW]);
-    const h = interpolate(p, [0, 1], [CAMERA_CARD_HEIGHT, frameOuterH]);
-    const br = interpolate(p, [0, 1], [CAMERA_CARD_BORDER_RADIUS, 8]);
+    const t = transitionProgress.value;
 
-    const tScale = interpolate(transitionProgress.value, [0, 1], [1, 0.85]);
-    const tRotate = interpolate(transitionProgress.value, [0, 1], [frameRotate.value, 0]);
-    const tY = interpolate(transitionProgress.value, [0, 1], [0, -60]);
+    const baseLeft = interpolate(p, [0, 1], [CAMERA_CARD_LEFT, finalX]);
+    const baseTop = interpolate(p, [0, 1], [cameraCardTop, finalY]);
+    const baseW = interpolate(p, [0, 1], [CAMERA_CARD_WIDTH, frameOuterW]);
+    const baseH = interpolate(p, [0, 1], [CAMERA_CARD_HEIGHT, frameOuterH]);
+    const baseBr = interpolate(p, [0, 1], [CAMERA_CARD_BORDER_RADIUS, 8]);
+
+    const left = interpolate(t, [0, 1], [baseLeft, heroX]);
+    const top = interpolate(t, [0, 1], [baseTop, heroY]);
+    const w = interpolate(t, [0, 1], [baseW, heroW]);
+    const h = interpolate(t, [0, 1], [baseH, heroH]);
+    const br = interpolate(t, [0, 1], [baseBr, 12]);
+    const rotate = interpolate(t, [0, 1], [frameRotate.value, 0]);
 
     return {
       position: 'absolute' as const,
@@ -217,9 +257,7 @@ export default function ResultScreen() {
       height: h,
       borderRadius: br,
       transform: [
-        { scale: tScale },
-        { rotate: `${tRotate}deg` },
-        { translateY: tY },
+        { rotate: `${rotate}deg` },
       ],
     };
   });
@@ -227,6 +265,18 @@ export default function ResultScreen() {
   const spinnerStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${spinnerRotation.value * 360}deg` }],
   }));
+
+  const shineSweepStyle = useAnimatedStyle(() => {
+    const ty = interpolate(
+      shineRotation.value,
+      [0, 1],
+      [-SCREEN_HEIGHT * 0.5, SCREEN_HEIGHT * 0.5],
+    );
+    return {
+      transform: [{ translateY: ty }],
+      opacity: bgOpacity.value,
+    };
+  });
 
   const stepsAnimStyle = useAnimatedStyle(() => {
     const fadeOut = interpolate(transitionProgress.value, [0, 0.3], [1, 0], 'clamp');
@@ -292,11 +342,16 @@ export default function ResultScreen() {
         >
           {/* Framed hero image */}
           <View style={styles.resultHeroWrap}>
-            <View style={styles.resultFrame}>
-              {imageUri && (
-                <Image source={{ uri: imageUri }} style={styles.resultFrameImage} />
-              )}
-            </View>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => setPhotoFullscreen(true)}
+            >
+              <View style={styles.resultFrame}>
+                {imageUri && (
+                  <Image source={{ uri: imageUri }} style={styles.resultFrameImage} />
+                )}
+              </View>
+            </TouchableOpacity>
             <LinearGradient
               colors={['transparent', Colors.background]}
               style={styles.resultHeroFade}
@@ -315,6 +370,22 @@ export default function ResultScreen() {
           <View style={styles.mainInfo}>
             <Text style={styles.brand}>{result.brand}</Text>
             <Text style={styles.name}>{result.name}</Text>
+
+            {/* Price range badge */}
+            {result.priceRange && (
+              <View style={styles.priceBadge}>
+                <LinearGradient
+                  colors={['#c8943c', '#d4a44a', '#c8943c']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.priceBadgeGradient}
+                >
+                  <Ionicons name="pricetag" size={14} color="#fff" />
+                  <Text style={styles.priceBadgeText}>{result.priceRange}</Text>
+                </LinearGradient>
+              </View>
+            )}
+
             <View style={styles.ratingRow}>
               <View style={styles.stars}>{renderStars(result.rating)}</View>
               <Text style={styles.ratingText}>{result.rating}/5</Text>
@@ -368,7 +439,6 @@ export default function ResultScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Details</Text>
             <View style={styles.card}>
-              <InfoRow icon="💰" label="Price" value={result.priceRange} />
               <InfoRow icon="⏱️" label="Longevity" value={result.longevity} />
               <InfoRow icon="💨" label="Sillage" value={result.sillage} />
               <InfoRow icon="📅" label="Year" value={result.yearLaunched} />
@@ -396,34 +466,140 @@ export default function ResultScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Similar Perfumes</Text>
-            <View style={styles.card}>
-              {result.similarPerfumes.map((p, i) => (
-                <View key={i} style={styles.similarItem}>
-                  <Text style={styles.similarIcon}>🔸</Text>
-                  <Text style={styles.similarText}>{p}</Text>
-                </View>
+            <Text style={styles.sectionSubtitle}>Tap to shop online</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.similarScroll}
+            >
+              {normalizeSimilarPerfumes(result.similarPerfumes).map((p, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.similarCard}
+                  activeOpacity={0.85}
+                  onPress={() => WebBrowser.openBrowserAsync(
+                    buildShoppingUrl(p.name, p.brand, 'google')
+                  )}
+                >
+                  <LinearGradient
+                    colors={[Colors.surfaceLight, Colors.surface]}
+                    style={styles.similarCardGradient}
+                  >
+                    <View style={styles.similarImageWrap}>
+                      <LinearGradient
+                        colors={['#c8943c22', '#d4a44a11']}
+                        style={styles.similarImagePlaceholder}
+                      >
+                        <Text style={styles.similarInitial}>
+                          {(p.brand || p.name).charAt(0).toUpperCase()}
+                        </Text>
+                        <Ionicons name="flask-outline" size={28} color={Colors.primary} style={{ marginTop: 4 }} />
+                      </LinearGradient>
+                    </View>
+                    <Text style={styles.similarCardBrand} numberOfLines={1}>{p.brand}</Text>
+                    <Text style={styles.similarCardName} numberOfLines={2}>{p.name}</Text>
+                    {p.estimatedPrice ? (
+                      <Text style={styles.similarCardPrice}>{p.estimatedPrice}</Text>
+                    ) : null}
+                    <View style={styles.shopRow}>
+                      <TouchableOpacity
+                        style={styles.shopButton}
+                        onPress={() => WebBrowser.openBrowserAsync(
+                          buildShoppingUrl(p.name, p.brand, 'amazon')
+                        )}
+                      >
+                        <Text style={styles.shopButtonText}>Amazon</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.shopButton}
+                        onPress={() => WebBrowser.openBrowserAsync(
+                          buildShoppingUrl(p.name, p.brand, 'ebay')
+                        )}
+                      >
+                        <Text style={styles.shopButtonText}>eBay</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
           </View>
 
+          <View style={{ height: 100 }} />
+        </ScrollView>
+
+        {/* Sticky footer bar */}
+        <View style={[styles.footerBar, { paddingBottom: insets.bottom || Spacing.md }]}>
           <TouchableOpacity
-            style={styles.scanAgainButton}
-            onPress={() => router.replace('/')}
-            activeOpacity={0.85}
+            style={styles.retakeButton}
+            onPress={() => router.replace('/camera')}
+            activeOpacity={0.8}
           >
-            <LinearGradient
-              colors={[Colors.primary, Colors.primaryDark]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.scanAgainGradient}
-            >
-              <Ionicons name="scan" size={22} color="#fff" />
-              <Text style={styles.scanAgainText}>Scan Another Perfume</Text>
-            </LinearGradient>
+            <Ionicons name="camera-outline" size={22} color={Colors.text} />
           </TouchableOpacity>
 
-          <View style={{ height: Spacing.xxl }} />
-        </ScrollView>
+          <TouchableOpacity
+            style={[
+              styles.addCollectionButton,
+              savedToCollection && styles.addCollectionButtonDone,
+            ]}
+            onPress={handleSave}
+            activeOpacity={0.8}
+            disabled={savedToCollection || saving}
+          >
+            <LinearGradient
+              colors={savedToCollection ? ['#2a6e2a', '#1e5e1e'] : [Colors.primary, Colors.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.addCollectionGradient}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons
+                  name={savedToCollection ? 'checkmark-circle' : 'add-circle-outline'}
+                  size={20}
+                  color="#fff"
+                />
+              )}
+              <Text style={styles.addCollectionText}>
+                {savedToCollection ? 'Saved' : saving ? 'Saving...' : 'Add to Collection'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* Fullscreen Photo Modal */}
+        <Modal
+          visible={photoFullscreen}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setPhotoFullscreen(false)}
+        >
+          <View style={styles.fullscreenBackdrop}>
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={1}
+              onPress={() => setPhotoFullscreen(false)}
+            />
+            {imageUri && (
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.fullscreenImage}
+                resizeMode="contain"
+              />
+            )}
+            <TouchableOpacity
+              style={[styles.fullscreenClose, { top: insets.top + Spacing.sm }]}
+              onPress={() => setPhotoFullscreen(false)}
+            >
+              <View style={styles.fullscreenCloseCircle}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -448,6 +624,24 @@ export default function ResultScreen() {
           {imageUri && (
             <Image source={{ uri: imageUri }} style={styles.photoFrameImage} />
           )}
+          {/* Diagonal shine sweep across the photo */}
+          <Animated.View style={[styles.shineSweep, shineSweepStyle]} pointerEvents="none">
+            <LinearGradient
+              colors={[
+                'transparent',
+                'rgba(255,220,140,0.0)',
+                'rgba(255,220,140,0.55)',
+                'rgba(255,255,220,0.85)',
+                'rgba(255,220,140,0.55)',
+                'rgba(255,220,140,0.0)',
+                'transparent',
+              ]}
+              locations={[0, 0.3, 0.45, 0.5, 0.55, 0.7, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
         </View>
         {/* Golden frame border */}
         <Animated.View style={[styles.frameBorder, borderStyle]} pointerEvents="none" />
@@ -533,6 +727,14 @@ const styles = StyleSheet.create({
     right: Spacing.xl,
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(200,148,60,0.12)',
+  },
+
+  shineSweep: {
+    position: 'absolute',
+    left: -SCREEN_WIDTH * 0.1,
+    right: -SCREEN_WIDTH * 0.1,
+    top: 0,
+    height: SCREEN_HEIGHT * 0.5,
   },
 
   photoClip: {
@@ -796,35 +998,180 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: Spacing.sm,
   },
-  similarItem: {
+  priceBadge: {
+    marginTop: Spacing.md,
+    alignSelf: 'flex-start',
+  },
+  priceBadgeGradient: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
     gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: '#c8943c40',
   },
-  similarIcon: {
-    fontSize: 14,
+  priceBadgeText: {
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
   },
-  similarText: {
-    fontSize: FontSizes.md,
+  sectionSubtitle: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    marginBottom: Spacing.md,
+    marginTop: -Spacing.sm,
+  },
+  similarScroll: {
+    paddingRight: Spacing.lg,
+    gap: Spacing.md,
+  },
+  similarCard: {
+    width: 170,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border + '60',
+  },
+  similarCardGradient: {
+    padding: Spacing.md,
+    alignItems: 'center',
+  },
+  similarImageWrap: {
+    width: 100,
+    height: 100,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+  },
+  similarImagePlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: '#c8943c20',
+  },
+  similarInitial: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: Colors.primary,
+    opacity: 0.7,
+  },
+  similarCardBrand: {
+    fontSize: FontSizes.xs,
+    fontWeight: '600',
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  similarCardName: {
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
     color: Colors.text,
-    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 2,
+    minHeight: 36,
   },
-  scanAgainButton: {
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.xl,
+  similarCardPrice: {
+    fontSize: FontSizes.sm,
+    fontWeight: '700',
+    color: Colors.gold,
+    marginTop: Spacing.xs,
+  },
+  shopRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  shopButton: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.border + '80',
+    alignItems: 'center',
+  },
+  shopButtonText: {
+    fontSize: FontSizes.xs,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  fullscreenBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.75,
+  },
+  fullscreenClose: {
+    position: 'absolute',
+    right: Spacing.lg,
+    zIndex: 10,
+  },
+  fullscreenCloseCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  footerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    backgroundColor: Colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(200,148,60,0.2)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#c8943c',
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.15,
+        shadowRadius: 10,
+      },
+      android: { elevation: 8 },
+    }),
+  },
+  retakeButton: {
+    width: 46,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  addCollectionButton: {
+    flex: 1,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
   },
-  scanAgainGradient: {
+  addCollectionButtonDone: {
+    opacity: 0.85,
+  },
+  addCollectionGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.lg - 4,
+    paddingVertical: Spacing.md - 2,
     gap: Spacing.sm,
   },
-  scanAgainText: {
-    fontSize: FontSizes.lg,
+  addCollectionText: {
+    fontSize: FontSizes.md,
     fontWeight: '700',
     color: '#fff',
   },

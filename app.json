@@ -53,7 +53,9 @@
         {
           "photosPermission": "PerfumeSnap needs photo library access to identify perfumes from your photos."
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
     ]
   }
 }

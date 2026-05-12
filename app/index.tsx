@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,23 +16,46 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withTiming,
+  Easing,
   runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import HomeTab from '../components/HomeTab';
-import CollectionTab from '../components/CollectionTab';
-import { Colors } from '../constants/theme';
+import CollectionTab, { CollectionTabHandle } from '../components/CollectionTab';
+import { Colors, Spacing, FontSizes } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAMERA_BTN_SIZE = 70;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 const SPRING_CONFIG = { damping: 22, stiffness: 250, mass: 0.8 };
+const NOTCH_OVERFLOW = CAMERA_BTN_SIZE / 2 + 8;
 
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState(0);
+  const [editState, setEditState] = useState({ editing: false, selectedCount: 0 });
+  const collectionRef = useRef<CollectionTabHandle>(null);
   const translateX = useSharedValue(0);
   const insets = useSafeAreaInsets();
+
+  const handleEditStateChange = useCallback(
+    (state: { editing: boolean; selectedCount: number }) => setEditState(state),
+    [],
+  );
+
+  const editOverlayTranslateY = useSharedValue(200);
+
+  useEffect(() => {
+    editOverlayTranslateY.value = withTiming(
+      editState.editing ? 0 : 200,
+      { duration: 280, easing: Easing.out(Easing.cubic) },
+    );
+  }, [editState.editing]);
+
+  const editOverlayAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: editOverlayTranslateY.value }],
+  }));
 
   const switchTab = (page: number) => {
     setActiveTab(page);
@@ -130,7 +153,7 @@ export default function MainScreen() {
             <HomeTab />
           </View>
           <View style={styles.page}>
-            <CollectionTab />
+            <CollectionTab ref={collectionRef} onEditStateChange={handleEditStateChange} />
           </View>
         </Animated.View>
       </GestureDetector>
@@ -184,6 +207,42 @@ export default function MainScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      <Animated.View
+        style={[
+          styles.editOverlay,
+          { paddingBottom: insets.bottom || 12 },
+          editOverlayAnimStyle,
+        ]}
+        pointerEvents={editState.editing ? 'auto' : 'none'}
+      >
+        <View style={styles.editOverlayRow}>
+          <TouchableOpacity
+            style={styles.editOverlayBtn}
+            onPress={() => collectionRef.current?.deleteSelected()}
+            disabled={editState.selectedCount === 0}
+          >
+            <Ionicons
+              name="trash-outline"
+              size={22}
+              color={editState.selectedCount > 0 ? Colors.error : Colors.textMuted}
+            />
+            <Text style={[
+              styles.editOverlayText,
+              { color: editState.selectedCount > 0 ? Colors.error : Colors.textMuted },
+            ]}>
+              Delete
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.editOverlayBtn}>
+            <Ionicons name="share-outline" size={22} color={Colors.textMuted} />
+            <Text style={[styles.editOverlayText, { color: Colors.textMuted }]}>
+              Export
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     </GestureHandlerRootView>
   );
 }
@@ -207,19 +266,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    backgroundColor: Colors.surfaceLight,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    backgroundColor: '#141110',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(200,148,60,0.2)',
     paddingTop: 8,
     ...Platform.select({
       ios: {
-        shadowColor: Colors.primary,
+        shadowColor: '#c8943c',
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 16,
+        shadowOpacity: 0.2,
+        shadowRadius: 14,
       },
       android: {
-        elevation: 12,
+        elevation: 16,
       },
     }),
   },
@@ -247,7 +306,7 @@ const styles = StyleSheet.create({
     width: CAMERA_BTN_SIZE + 20,
     height: CAMERA_BTN_SIZE + 16,
     borderRadius: (CAMERA_BTN_SIZE + 20) / 2,
-    backgroundColor: Colors.surfaceLight,
+    backgroundColor: '#141110',
     paddingTop: 4,
   },
   cameraButtonWrapper: {
@@ -270,5 +329,40 @@ const styles = StyleSheet.create({
     borderRadius: CAMERA_BTN_SIZE / 2,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  editOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: NOTCH_OVERFLOW,
+    backgroundColor: Colors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(200,148,60,0.2)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#c8943c',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 14,
+      },
+      android: { elevation: 20 },
+    }),
+  },
+  editOverlayRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  editOverlayBtn: {
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.xl,
+  },
+  editOverlayText: {
+    fontSize: FontSizes.xs,
+    fontWeight: '600',
   },
 });

@@ -6,5 +6,24 @@
   // npx wrangler secret put OPENAI_API_KEY
   "observability": {
     "enabled": true
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "perfumesnap-db",
+      "database_id": "b213b69e-8666-4f3d-99a4-c3d430fc2ee4"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "perfumesnap-images"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "RATE_LIMIT",
+      "id": "7f22d5f08b7f494b8a992b8f80d677a8"
+    }
+  ]
 }

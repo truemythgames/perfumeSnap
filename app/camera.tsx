@@ -42,12 +42,13 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [zoom, setZoom] = useState(0);
+  const INITIAL_ZOOM_PCT = 0.25;
+  const [zoom, setZoom] = useState(MAX_ZOOM * INITIAL_ZOOM_PCT);
   const insets = useSafeAreaInsets();
   const captureScale = useSharedValue(1);
   const capturePulse = useSharedValue(0);
   const shutterDim = useSharedValue(0);
-  const sliderX = useSharedValue(0);
+  const sliderX = useSharedValue(TRACK_WIDTH * INITIAL_ZOOM_PCT);
 
   useEffect(() => {
     capturePulse.value = withRepeat(
