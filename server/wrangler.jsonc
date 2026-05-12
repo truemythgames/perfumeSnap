@@ -1,0 +1,10 @@
+{
+  "name": "perfumesnap-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-01",
+  // Add your OpenAI key as a secret:
+  // npx wrangler secret put OPENAI_API_KEY
+  "observability": {
+    "enabled": true
+  }
+}
