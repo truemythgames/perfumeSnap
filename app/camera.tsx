@@ -5,27 +5,85 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  Alert,
+  Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  runOnJS,
+} from 'react-native-reanimated';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_HORIZONTAL_PADDING = 20;
+const CARD_WIDTH = SCREEN_WIDTH - CARD_HORIZONTAL_PADDING * 2;
+const CARD_HEIGHT = CARD_WIDTH * 1.32;
+const CORNER_SIZE = 36;
+const CORNER_WIDTH = 3.5;
+const MAX_ZOOM = 0.40;
+const SLIDER_H_PAD = 56;
+const TRACK_WIDTH = SCREEN_WIDTH - (SLIDER_H_PAD * 2) - 80 - 32;
 
 export default function CameraScreen() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
-  const [facing, setFacing] = useState<'front' | 'back'>('back');
+  const [torch, setTorch] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [zoom, setZoom] = useState(0);
+  const insets = useSafeAreaInsets();
+  const captureScale = useSharedValue(1);
+  const sliderX = useSharedValue(0);
+
+  const captureAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: captureScale.value }],
+  }));
+
+  const updateZoom = (val: number) => setZoom(val * MAX_ZOOM);
+  const panStart = useSharedValue(0);
+
+  const sliderGesture = Gesture.Pan()
+    .onBegin(() => {
+      panStart.value = sliderX.value;
+    })
+    .onUpdate((e) => {
+      const raw = Math.max(0, Math.min(TRACK_WIDTH, panStart.value + e.translationX));
+      sliderX.value = raw;
+      runOnJS(updateZoom)(raw / TRACK_WIDTH);
+    })
+    .hitSlop({ top: 20, bottom: 20, left: 10, right: 10 });
+
+  const sliderTap = Gesture.Tap()
+    .onEnd((e) => {
+      const raw = Math.max(0, Math.min(TRACK_WIDTH, e.x));
+      sliderX.value = raw;
+      runOnJS(updateZoom)(raw / TRACK_WIDTH);
+    });
+
+  const sliderComposed = Gesture.Race(sliderGesture, sliderTap);
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: sliderX.value }],
+  }));
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: sliderX.value,
+  }));
 
   if (!permission) return null;
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={styles.permissionContainer}>
+      <View style={styles.permissionContainer}>
         <Ionicons name="camera-outline" size={64} color={Colors.textMuted} />
         <Text style={styles.permissionTitle}>Camera Access Needed</Text>
         <Text style={styles.permissionText}>
@@ -34,13 +92,14 @@ export default function CameraScreen() {
         <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
           <Text style={styles.permissionButtonText}>Grant Access</Text>
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     );
   }
 
   const takePicture = async () => {
     if (!cameraRef.current || capturing) return;
     setCapturing(true);
+    captureScale.value = withSpring(0.9, { damping: 15, stiffness: 300 });
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
@@ -61,173 +120,328 @@ export default function CameraScreen() {
     } catch (error) {
       console.error('Failed to take picture:', error);
     } finally {
+      captureScale.value = withSpring(1, { damping: 15, stiffness: 300 });
       setCapturing(false);
     }
   };
 
+  const pickFromLibrary = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Photo Library Permission',
+        'PerfumeSnap needs photo library access. Please enable it in Settings.',
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      base64: true,
+      allowsEditing: true,
+      aspect: [3, 4],
+    });
+
+    if (!result.canceled && result.assets[0]?.base64) {
+      router.replace({
+        pathname: '/result',
+        params: {
+          imageUri: result.assets[0].uri,
+          imageBase64: result.assets[0].base64,
+        },
+      });
+    }
+  };
+
+  const adjustZoom = (delta: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const next = Math.max(0, Math.min(MAX_ZOOM, zoom + delta * MAX_ZOOM));
+    setZoom(next);
+    sliderX.value = (next / MAX_ZOOM) * TRACK_WIDTH;
+  };
+
   return (
-    <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
-        <SafeAreaView style={styles.overlay}>
-          <View style={styles.topBar}>
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={() => router.back()}
-            >
-              <Ionicons name="close" size={28} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.topTitle}>Scan Perfume</Text>
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={() => setFacing(facing === 'back' ? 'front' : 'back')}
-            >
-              <Ionicons name="camera-reverse-outline" size={28} color="#fff" />
-            </TouchableOpacity>
-          </View>
+    <GestureHandlerRootView style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Top bar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.topButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={24} color={Colors.text} />
+        </TouchableOpacity>
+        <View style={styles.topBarRight}>
+          <TouchableOpacity style={styles.topButton} onPress={() => setTorch(!torch)}>
+            <Ionicons
+              name={torch ? 'flash' : 'flash-off-outline'}
+              size={20}
+              color={torch ? Colors.gold : Colors.textSecondary}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-          <View style={styles.frameContainer}>
-            <View style={styles.frame}>
-              <View style={[styles.corner, styles.topLeft]} />
-              <View style={[styles.corner, styles.topRight]} />
-              <View style={[styles.corner, styles.bottomLeft]} />
-              <View style={[styles.corner, styles.bottomRight]} />
-            </View>
-            <Text style={styles.hint}>
-              Position the perfume bottle within the frame
-            </Text>
+      {/* Camera card */}
+      <View style={styles.cameraCard}>
+        <CameraView
+          ref={cameraRef}
+          style={styles.cameraFeed}
+          facing="back"
+          enableTorch={torch}
+          zoom={zoom}
+        />
+        {/* Corner brackets + hint */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <View style={styles.bracketSquare}>
+            <View style={[styles.corner, styles.tl]} />
+            <View style={[styles.corner, styles.tr]} />
+            <View style={[styles.corner, styles.bl]} />
+            <View style={[styles.corner, styles.br]} />
           </View>
+          <Text style={styles.hintText}>Place the item in focus</Text>
+        </View>
+      </View>
 
-          <View style={styles.bottomBar}>
-            <View style={styles.captureContainer}>
-              <TouchableOpacity
-                style={[styles.captureButton, capturing && styles.captureButtonActive]}
-                onPress={takePicture}
-                disabled={capturing}
-                activeOpacity={0.7}
-              >
-                <View style={styles.captureInner} />
-              </TouchableOpacity>
+      {/* Zoom slider */}
+      <View style={styles.zoomRow}>
+        <TouchableOpacity onPress={() => adjustZoom(-0.1)} style={styles.zoomButton}>
+          <Ionicons name="remove" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+        <GestureDetector gesture={sliderComposed}>
+          <View style={styles.zoomTrackHitArea}>
+            <View style={styles.zoomTrack}>
+              <Animated.View style={[styles.zoomFill, fillStyle]} />
             </View>
+            <Animated.View style={[styles.zoomThumb, thumbStyle]} />
           </View>
-        </SafeAreaView>
-      </CameraView>
-    </View>
+        </GestureDetector>
+        <TouchableOpacity onPress={() => adjustZoom(0.1)} style={styles.zoomButton}>
+          <Ionicons name="add" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Bottom controls */}
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.md }]}>
+        <TouchableOpacity style={styles.sideButton} onPress={pickFromLibrary}>
+          <Ionicons name="images-outline" size={24} color={Colors.textSecondary} />
+        </TouchableOpacity>
+
+        <Animated.View style={captureAnimStyle}>
+          <TouchableOpacity
+            onPress={takePicture}
+            disabled={capturing}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={[Colors.primary, Colors.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.captureOuter}
+            >
+              <View style={styles.captureInner}>
+                <Ionicons name="scan-outline" size={28} color={Colors.primary} />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+
+        <TouchableOpacity style={styles.sideButton}>
+          <Ionicons name="help-outline" size={24} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    </GestureHandlerRootView>
   );
 }
-
-const FRAME_SIZE = SCREEN_WIDTH * 0.75;
-const CORNER_SIZE = 30;
-const CORNER_WIDTH = 4;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: Colors.background,
   },
-  camera: {
-    flex: 1,
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: 'space-between',
-  },
+
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingVertical: Spacing.sm,
   },
-  topTitle: {
-    fontSize: FontSizes.lg,
-    fontWeight: '700',
-    color: '#fff',
+  topBarRight: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
   },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  topButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.surfaceLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  frameContainer: {
-    alignItems: 'center',
+
+  hintText: {
+    position: 'absolute',
+    top: Spacing.md,
+    left: 0,
+    right: 0,
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
   },
-  frame: {
-    width: FRAME_SIZE,
-    height: FRAME_SIZE * 1.2,
-    position: 'relative',
+
+  cameraCard: {
+    marginTop: Spacing.sm,
+    marginHorizontal: CARD_HORIZONTAL_PADDING,
+    height: CARD_HEIGHT,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.4,
+        shadowRadius: 16,
+      },
+      android: { elevation: 12 },
+    }),
+  },
+  cameraFeed: {
+    flex: 1,
+  },
+
+  bracketSquare: {
+    position: 'absolute',
+    width: CARD_WIDTH - Spacing.xl * 2,
+    height: CARD_WIDTH - Spacing.xl * 2,
+    alignSelf: 'center',
+    left: Spacing.xl,
+    top: '50%',
+    marginTop: -(CARD_WIDTH - Spacing.xl * 2) / 2,
   },
   corner: {
     position: 'absolute',
     width: CORNER_SIZE,
     height: CORNER_SIZE,
   },
-  topLeft: {
+  tl: {
     top: 0,
     left: 0,
     borderTopWidth: CORNER_WIDTH,
     borderLeftWidth: CORNER_WIDTH,
-    borderColor: Colors.primary,
-    borderTopLeftRadius: 12,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  topRight: {
+  tr: {
     top: 0,
     right: 0,
     borderTopWidth: CORNER_WIDTH,
     borderRightWidth: CORNER_WIDTH,
-    borderColor: Colors.primary,
-    borderTopRightRadius: 12,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  bottomLeft: {
+  bl: {
     bottom: 0,
     left: 0,
     borderBottomWidth: CORNER_WIDTH,
     borderLeftWidth: CORNER_WIDTH,
-    borderColor: Colors.primary,
-    borderBottomLeftRadius: 12,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  bottomRight: {
+  br: {
     bottom: 0,
     right: 0,
     borderBottomWidth: CORNER_WIDTH,
     borderRightWidth: CORNER_WIDTH,
-    borderColor: Colors.primary,
-    borderBottomRightRadius: 12,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  hint: {
-    fontSize: FontSizes.sm,
-    color: 'rgba(255,255,255,0.7)',
-    textAlign: 'center',
+
+  zoomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl + Spacing.md,
     marginTop: Spacing.lg,
+    gap: Spacing.md,
   },
-  bottomBar: {
-    alignItems: 'center',
-    paddingBottom: Spacing.xl,
-  },
-  captureContainer: {
-    alignItems: 'center',
-  },
-  captureButton: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 4,
-    borderColor: '#fff',
+  zoomButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surfaceLight,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'transparent',
   },
-  captureButtonActive: {
-    borderColor: Colors.primary,
+  zoomTrackHitArea: {
+    flex: 1,
+    height: 50,
+    justifyContent: 'center',
+    marginHorizontal: Spacing.md,
+  },
+  zoomTrack: {
+    height: 6,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 3,
+  },
+  zoomFill: {
+    position: 'absolute',
+    left: 0,
+    height: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 3,
+  },
+  zoomThumb: {
+    position: 'absolute',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primary,
+    marginLeft: -16,
+    borderWidth: 3,
+    borderColor: Colors.background,
+    top: (50 - 32) / 2,
+  },
+
+  bottomBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl + Spacing.md,
+  },
+
+  sideButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+
+  captureOuter: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+      },
+      android: { elevation: 8 },
+    }),
   },
   captureInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#fff',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',
