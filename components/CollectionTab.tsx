@@ -204,6 +204,43 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     return { count: items.length, brands: brands.size, totalValue: Math.round(totalValue) };
   }, [items]);
 
+  const renderToolbar = () => (
+    editing ? (
+      <View style={styles.toolbar}>
+        <TouchableOpacity style={styles.selectAllBtn} onPress={selectAll}>
+          <Ionicons
+            name={selectedIds.size === items.length ? 'checkbox' : 'square-outline'}
+            size={CHECKBOX_ICON}
+            color={Colors.primary}
+          />
+          <Text style={styles.toolBtnTextActive}>Select All</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={cancelEditing}>
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    ) : (
+      <View style={styles.toolbar}>
+        <View style={styles.toolLeft}>
+          <TouchableOpacity style={styles.toolBtn}>
+            <Ionicons name="filter-outline" size={16} color={Colors.textSecondary} />
+            <Text style={styles.toolBtnText}>Filter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolBtn}>
+            <Ionicons name="swap-vertical-outline" size={16} color={Colors.textSecondary} />
+            <Text style={styles.toolBtnText}>Sort</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          onPress={enterEditing}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="list-outline" size={22} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    )
+  );
+
   const renderHeader = () => {
     if (items.length === 0) return null;
     return (
@@ -228,48 +265,25 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           </View>
         </View>
 
-        <View style={styles.sectionDivider} />
-
-        {/* Toolbar */}
-        {editing ? (
-          <View style={styles.toolbar}>
-            <TouchableOpacity style={styles.selectAllBtn} onPress={selectAll}>
-              <Ionicons
-                name={selectedIds.size === items.length ? 'checkbox' : 'square-outline'}
-                size={CHECKBOX_ICON}
-                color={Colors.primary}
-              />
-              <Text style={styles.toolBtnTextActive}>Select All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={cancelEditing}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.toolbar}>
-            <View style={styles.toolLeft}>
-              <TouchableOpacity style={styles.toolBtn}>
-                <Ionicons name="filter-outline" size={16} color={Colors.textSecondary} />
-                <Text style={styles.toolBtnText}>Filter</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.toolBtn}>
-                <Ionicons name="swap-vertical-outline" size={16} color={Colors.textSecondary} />
-                <Text style={styles.toolBtnText}>Sort</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              onPress={enterEditing}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="list-outline" size={22} color={Colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
     );
   };
 
-  const renderItem = ({ item }: { item: CollectionItem }) => {
+  type ToolbarRow = { __toolbar: true };
+  type ListRow = ToolbarRow | CollectionItem;
+  const TOOLBAR_ROW: ToolbarRow = { __toolbar: true };
+
+  const listData = useMemo<ListRow[]>(
+    () => (items.length > 0 ? [TOOLBAR_ROW, ...items] : []),
+    [items],
+  );
+
+  const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
+
+  const renderItem = ({ item }: { item: ListRow }) => {
+    if (isToolbarRow(item)) {
+      return <View style={styles.stickyToolbar}>{renderToolbar()}</View>;
+    }
     const p = item.perfume;
     const dateStr = new Date(item.createdAt).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric',
@@ -352,10 +366,11 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           </View>
         ) : (
           <FlatList
-            data={items}
-            keyExtractor={(it) => it.id}
+            data={listData}
+            keyExtractor={(it) => (isToolbarRow(it) ? 'toolbar' : it.id)}
             renderItem={renderItem}
             ListHeaderComponent={renderHeader}
+            stickyHeaderIndices={[1]}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             refreshControl={
@@ -464,13 +479,16 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
 
-  // Toolbar
+  stickyToolbar: {
+    paddingTop: 6,
+    paddingBottom: Spacing.sm,
+    backgroundColor: '#12100c',
+  },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xs,
+    paddingTop: Spacing.sm,
     minHeight: 36,
   },
   toolLeft: {
