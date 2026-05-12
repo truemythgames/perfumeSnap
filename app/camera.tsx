@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withRepeat,
+  withTiming,
+  Easing,
   runOnJS,
 } from 'react-native-reanimated';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
@@ -42,10 +45,25 @@ export default function CameraScreen() {
   const [zoom, setZoom] = useState(0);
   const insets = useSafeAreaInsets();
   const captureScale = useSharedValue(1);
+  const capturePulse = useSharedValue(0);
+  const shutterDim = useSharedValue(0);
   const sliderX = useSharedValue(0);
 
+  useEffect(() => {
+    capturePulse.value = withRepeat(
+      withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true,
+    );
+  }, []);
+
   const captureAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: captureScale.value }],
+    transform: [{ scale: captureScale.value * (1 + capturePulse.value * 0.04) }],
+    opacity: 0.92 + capturePulse.value * 0.08,
+  }));
+
+  const shutterStyle = useAnimatedStyle(() => ({
+    opacity: shutterDim.value,
   }));
 
   const updateZoom = (val: number) => setZoom(val * MAX_ZOOM);
@@ -99,28 +117,23 @@ export default function CameraScreen() {
   const takePicture = async () => {
     if (!cameraRef.current || capturing) return;
     setCapturing(true);
-    captureScale.value = withSpring(0.9, { damping: 15, stiffness: 300 });
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-        base64: true,
+        quality: 0.7,
+        skipProcessing: true,
+        shutterSound: false,
       });
-
-      if (photo?.base64) {
+      if (photo?.uri) {
         router.replace({
           pathname: '/result',
-          params: {
-            imageUri: photo.uri,
-            imageBase64: photo.base64,
-          },
+          params: { imageUri: photo.uri },
         });
       }
-    } catch (error) {
-      console.error('Failed to take picture:', error);
-    } finally {
-      captureScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    } catch (err) {
+      console.error('Failed to take picture:', err);
+      shutterDim.value = withTiming(0, { duration: 200 });
       setCapturing(false);
     }
   };
@@ -237,9 +250,7 @@ export default function CameraScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.captureOuter}
             >
-              <View style={styles.captureInner}>
-                <Ionicons name="scan-outline" size={28} color={Colors.primary} />
-              </View>
+              <View style={styles.captureInner} />
             </LinearGradient>
           </TouchableOpacity>
         </Animated.View>
@@ -248,6 +259,11 @@ export default function CameraScreen() {
           <Ionicons name="help-outline" size={24} color={Colors.textSecondary} />
         </TouchableOpacity>
       </View>
+      {/* Shutter dim feedback over camera card */}
+      <Animated.View
+        style={[styles.shutterDim, shutterStyle]}
+        pointerEvents="none"
+      />
     </GestureHandlerRootView>
   );
 }
@@ -256,6 +272,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  shutterDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    zIndex: 100,
   },
 
   topBar: {

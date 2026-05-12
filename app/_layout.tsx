@@ -19,7 +19,9 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="result"
-          options={{ animation: 'slide_from_right' }}
+          options={{
+            animation: 'none',
+          }}
         />
       </Stack>
     </>
