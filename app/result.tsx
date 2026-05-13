@@ -1,5 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import {
   View,
   Text,
   StyleSheet,
@@ -28,6 +33,7 @@ import Animated, {
   Easing,
   interpolate,
   runOnJS,
+  Extrapolation,
 } from 'react-native-reanimated';
 import { identifyPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage } from '../services/api';
 import NoteChip from '../components/NoteChip';
@@ -35,6 +41,11 @@ import InfoRow from '../components/InfoRow';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/** Detail hero zone; framed image is 90% of screen width with 1:1.3 ratio (bottom may clip). */
+const RESULT_HERO_ZONE_HEIGHT = SCREEN_WIDTH * 0.9;
+const RESULT_DETAIL_FRAME_W = SCREEN_WIDTH * 0.9;
+const RESULT_DETAIL_FRAME_H = RESULT_DETAIL_FRAME_W * 1.3;
 
 const STEPS = [
   { label: 'Processing image', icon: 'image-outline' as const },
@@ -223,8 +234,83 @@ export default function ResultScreen() {
   const transitionProgress = useSharedValue(0);
   const spinnerRotation = useSharedValue(0);
   const shineRotation = useSharedValue(0);
+  const fullscreenTranslateY = useSharedValue(0);
 
   const onTransitionDone = useCallback(() => setShowResult(true), []);
+
+  const openPhotoFullscreen = useCallback(() => {
+    fullscreenTranslateY.value = 0;
+    setPhotoFullscreen(true);
+  }, []);
+
+  const closePhotoFullscreen = useCallback(() => {
+    setPhotoFullscreen(false);
+  }, []);
+
+  const fullscreenPanGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .maxPointers(1)
+        .activeOffsetY([-8, 8])
+        .onUpdate((e) => {
+          'worklet';
+          fullscreenTranslateY.value = e.translationY;
+        })
+        .onEnd((e) => {
+          'worklet';
+          const ty = e.translationY;
+          const vy = e.velocityY;
+          const dist = Math.abs(ty);
+          const speed = Math.abs(vy);
+          if (dist > 60 || speed > 400) {
+            const direction = ty >= 0 ? 1 : -1;
+            fullscreenTranslateY.value = withTiming(
+              direction * SCREEN_HEIGHT,
+              { duration: 180, easing: Easing.in(Easing.quad) },
+              (finished) => {
+                if (finished) runOnJS(closePhotoFullscreen)();
+              },
+            );
+          } else {
+            fullscreenTranslateY.value = withSpring(0, {
+              velocity: vy,
+              damping: 32,
+              stiffness: 300,
+              mass: 0.7,
+              overshootClamping: true,
+            });
+          }
+        }),
+    [closePhotoFullscreen],
+  );
+
+  const fullscreenBackdropAnimStyle = useAnimatedStyle(() => {
+    const ty = fullscreenTranslateY.value;
+    return {
+      opacity: interpolate(
+        Math.abs(ty),
+        [0, SCREEN_HEIGHT * 0.4],
+        [1, 0.15],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
+
+  const fullscreenImageSlideStyle = useAnimatedStyle(() => {
+    const ty = fullscreenTranslateY.value;
+    const scl = interpolate(
+      Math.abs(ty),
+      [0, SCREEN_HEIGHT * 0.5],
+      [1, 0.82],
+      Extrapolation.CLAMP,
+    );
+    return {
+      transform: [
+        { translateY: ty },
+        { scale: scl },
+      ],
+    };
+  });
 
   useEffect(() => {
     if (collectionPerfume) return;
@@ -523,21 +609,46 @@ export default function ResultScreen() {
             <TouchableOpacity
               activeOpacity={0.9}
               disabled={!displayImageUri}
-              onPress={() => displayImageUri && setPhotoFullscreen(true)}
+              onPress={() => displayImageUri && openPhotoFullscreen()}
             >
-              <View style={styles.resultFrame}>
-                {displayImageUri ? (
-                  <Image source={{ uri: displayImageUri }} style={styles.resultFrameImage} />
-                ) : (
-                  <View style={styles.resultFramePlaceholder}>
-                    <Ionicons name="flask-outline" size={48} color={Colors.primary} />
+              <View style={styles.resultHeroFrameOuter}>
+                <LinearGradient
+                  colors={['#dcc07a', '#c4a060', '#8a6e30']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.resultGoldFrameOuter}
+                >
+                  <View style={styles.resultGoldFrameInset}>
+                    <LinearGradient
+                      colors={['#8a6e30', '#b8953e', '#dcc07a']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.resultGoldFrameInner}
+                    >
+                      <View style={styles.resultPhotoClip}>
+                        {displayImageUri ? (
+                          <Image source={{ uri: displayImageUri }} style={styles.resultFrameImage} />
+                        ) : (
+                          <View style={styles.resultFramePlaceholder}>
+                            <Ionicons name="flask-outline" size={48} color={Colors.primary} />
+                          </View>
+                        )}
+                      </View>
+                    </LinearGradient>
                   </View>
-                )}
+                </LinearGradient>
               </View>
             </TouchableOpacity>
             <LinearGradient
               colors={['transparent', Colors.background]}
               style={styles.resultHeroFade}
+              pointerEvents="none"
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.25)', 'transparent']}
+              locations={[0, 0.55, 1]}
+              style={[styles.topShadow, { height: insets.top + 52 }]}
+              pointerEvents="none"
             />
             <View style={[styles.resultBackRow, { paddingTop: insets.top + Spacing.sm }]}>
               <TouchableOpacity
@@ -779,32 +890,46 @@ export default function ResultScreen() {
         <Modal
           visible={photoFullscreen}
           transparent
-          animationType="fade"
+          animationType="none"
           statusBarTranslucent
-          onRequestClose={() => setPhotoFullscreen(false)}
+          onRequestClose={closePhotoFullscreen}
         >
-          <View style={styles.fullscreenBackdrop}>
-            <TouchableOpacity
-              style={StyleSheet.absoluteFill}
-              activeOpacity={1}
-              onPress={() => setPhotoFullscreen(false)}
-            />
-            {displayImageUri && (
-              <Image
-                source={{ uri: displayImageUri }}
-                style={styles.fullscreenImage}
-                resizeMode="contain"
+          <GestureHandlerRootView style={styles.fullscreenGestureRoot}>
+            <View style={styles.fullscreenBackdrop}>
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.fullscreenBackdropFill, fullscreenBackdropAnimStyle]}
               />
-            )}
-            <TouchableOpacity
-              style={[styles.fullscreenClose, { top: insets.top + Spacing.sm }]}
-              onPress={() => setPhotoFullscreen(false)}
-            >
-              <View style={styles.fullscreenCloseCircle}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </View>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
+                activeOpacity={1}
+                onPress={closePhotoFullscreen}
+              />
+              <GestureDetector gesture={fullscreenPanGesture}>
+                <Animated.View
+                  style={[styles.fullscreenPanArea, fullscreenImageSlideStyle]}
+                  pointerEvents="box-none"
+                  collapsable={false}
+                >
+                  {displayImageUri ? (
+                    <Image
+                      source={{ uri: displayImageUri }}
+                      style={styles.fullscreenImage}
+                      resizeMode="contain"
+                    />
+                  ) : null}
+                </Animated.View>
+              </GestureDetector>
+              <TouchableOpacity
+                style={[styles.fullscreenClose, { top: insets.top + Spacing.sm }]}
+                onPress={closePhotoFullscreen}
+              >
+                <View style={styles.fullscreenCloseCircle}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </GestureHandlerRootView>
         </Modal>
       </View>
     );
@@ -1132,27 +1257,47 @@ const styles = StyleSheet.create({
   // Result hero with frame
   resultHeroWrap: {
     width: SCREEN_WIDTH,
-    height: SCREEN_WIDTH * 0.9,
+    height: RESULT_HERO_ZONE_HEIGHT,
     backgroundColor: Colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  resultFrame: {
-    width: SCREEN_WIDTH * 0.6,
-    height: SCREEN_WIDTH * 0.6 * 1.3,
-    borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: Colors.border,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: RESULT_HERO_ZONE_HEIGHT * 0.1,
+  },
+  resultHeroFrameOuter: {
+    padding: 4,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.4,
-        shadowRadius: 16,
+        shadowOffset: { width: 2, height: 6 },
+        shadowOpacity: 0.42,
+        shadowRadius: 12,
       },
-      android: { elevation: 12 },
+      android: { elevation: 10 },
     }),
+  },
+  resultGoldFrameOuter: {
+    width: RESULT_DETAIL_FRAME_W,
+    height: RESULT_DETAIL_FRAME_H,
+    borderRadius: 8,
+    padding: 3,
+  },
+  resultGoldFrameInset: {
+    flex: 1,
+    borderRadius: 5,
+    backgroundColor: '#0c0a08',
+    padding: 1.5,
+  },
+  resultGoldFrameInner: {
+    flex: 1,
+    borderRadius: 4,
+    padding: 2.5,
+  },
+  resultPhotoClip: {
+    flex: 1,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
   },
   resultFrameImage: {
     width: '100%',
@@ -1172,12 +1317,20 @@ const styles = StyleSheet.create({
     right: 0,
     height: 120,
   },
+  topShadow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1,
+  },
   resultBackRow: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     paddingHorizontal: Spacing.lg,
+    zIndex: 2,
   },
   heroBackButton: {
     width: 44,
@@ -1383,9 +1536,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textSecondary,
   },
+  fullscreenGestureRoot: {
+    flex: 1,
+  },
   fullscreenBackdrop: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenBackdropFill: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.95)',
+  },
+  fullscreenPanArea: {
+    flex: 1,
+    width: SCREEN_WIDTH,
     justifyContent: 'center',
     alignItems: 'center',
   },
