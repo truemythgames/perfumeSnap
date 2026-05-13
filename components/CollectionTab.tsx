@@ -16,7 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import Animated, {
   useAnimatedStyle,
   useAnimatedScrollHandler,
@@ -294,6 +294,17 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
   const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
 
+  const openCollectionDetail = useCallback((item: CollectionItem) => {
+    router.push({
+      pathname: '/result',
+      params: {
+        fromCollection: '1',
+        prefill: JSON.stringify(item.perfume),
+        ...(item.perfume.imageUri ? { imageUri: item.perfume.imageUri } : {}),
+      },
+    });
+  }, []);
+
   const renderItem = ({ item }: { item: ListRow }) => {
     if (isToolbarRow(item)) {
       return (
@@ -312,7 +323,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
         style={styles.card}
         activeOpacity={0.85}
         onLongPress={() => handleRemove(item.id)}
-        onPress={editing ? () => toggleSelect(item.id) : undefined}
+        onPress={() => (editing ? toggleSelect(item.id) : openCollectionDetail(item))}
       >
         <Animated.View style={[styles.checkboxWrap, checkboxAnimStyle]}>
           <Ionicons

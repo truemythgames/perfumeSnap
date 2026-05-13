@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -127,14 +127,78 @@ const PARTICLE_DELAYS = Array.from({ length: PARTICLE_COUNT }, (_, i) =>
 );
 
 export default function ResultScreen() {
-  const { imageUri } = useLocalSearchParams<{ imageUri: string }>();
-  const [result, setResult] = useState<PerfumeResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [showResult, setShowResult] = useState(false);
+  const params = useLocalSearchParams<{
+    imageUri?: string;
+    prefill?: string;
+    fromCollection?: string;
+  }>();
+
+  const imageUri = useMemo(() => {
+    const v = params.imageUri;
+    if (Array.isArray(v)) return v[0];
+    return v;
+  }, [params.imageUri]);
+
+  const prefillRaw = useMemo(() => {
+    const v = params.prefill;
+    if (Array.isArray(v)) return v[0];
+    return v;
+  }, [params.prefill]);
+
+  const fromCollection = useMemo(() => {
+    const v = params.fromCollection;
+    if (Array.isArray(v)) return v[0];
+    return v;
+  }, [params.fromCollection]);
+
+  const collectionPerfume = useMemo((): (PerfumeResult & {
+    imageUri?: string | null;
+    imageKey?: string | null;
+  }) | null => {
+    if (!prefillRaw) return null;
+    try {
+      return JSON.parse(prefillRaw) as PerfumeResult & {
+        imageUri?: string | null;
+        imageKey?: string | null;
+      };
+    } catch {
+      return null;
+    }
+  }, [prefillRaw]);
+
+  const prefillInvalid = Boolean(prefillRaw && !collectionPerfume);
+
+  const perfumeToResult = (
+    p: PerfumeResult & { imageUri?: string | null; imageKey?: string | null },
+  ): PerfumeResult => {
+    const { imageUri: _iu, imageKey: _ik, ...rest } = p as PerfumeResult & Record<string, unknown>;
+    return rest as PerfumeResult;
+  };
+
+  const displayImageUri = imageUri || collectionPerfume?.imageUri || undefined;
+
+  const leaveResult = useCallback(() => {
+    if (fromCollection === '1') router.back();
+    else router.replace('/');
+  }, [fromCollection]);
+
+  const [result, setResult] = useState<PerfumeResult | null>(() =>
+    collectionPerfume && !prefillInvalid ? perfumeToResult(collectionPerfume) : null,
+  );
+  const [loading, setLoading] = useState(() => {
+    if (prefillInvalid) return false;
+    if (collectionPerfume) return false;
+    return true;
+  });
+  const [error, setError] = useState<string | null>(() =>
+    prefillInvalid ? 'Could not open this item.' : null,
+  );
+  const [currentStep, setCurrentStep] = useState(() =>
+    collectionPerfume && !prefillInvalid ? STEPS.length : 0,
+  );
+  const [showResult, setShowResult] = useState(() => Boolean(collectionPerfume) && !prefillInvalid);
   const [photoFullscreen, setPhotoFullscreen] = useState(false);
-  const [savedToCollection, setSavedToCollection] = useState(false);
+  const [savedToCollection, setSavedToCollection] = useState(() => fromCollection === '1');
   const [saving, setSaving] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -163,6 +227,7 @@ export default function ResultScreen() {
   const onTransitionDone = useCallback(() => setShowResult(true), []);
 
   useEffect(() => {
+    if (collectionPerfume) return;
     bgOpacity.value = withTiming(1, { duration: 900, easing: Easing.out(Easing.quad) });
     progress.value = withTiming(1, { duration: 1100, easing: Easing.out(Easing.cubic) });
     frameRotate.value = withDelay(
@@ -198,7 +263,7 @@ export default function ResultScreen() {
       -1,
       false,
     );
-  }, []);
+  }, [collectionPerfume]);
 
   const apiResult = useRef<{ perfume?: PerfumeResult; error?: string } | null>(null);
   const stepInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -258,6 +323,7 @@ export default function ResultScreen() {
   }, []);
 
   const identify = useCallback(async () => {
+    if (!imageUri) return;
     setError(null);
     setLoading(true);
     setCurrentStep(0);
@@ -265,7 +331,7 @@ export default function ResultScreen() {
     startStepAnimation();
 
     try {
-      const base64 = await readAsBase64(imageUri!);
+      const base64 = await readAsBase64(imageUri);
       const perfume = await identifyPerfume(base64);
       apiResult.current = { perfume };
     } catch (err: any) {
@@ -274,14 +340,16 @@ export default function ResultScreen() {
   }, [imageUri, showError, startStepAnimation]);
 
   useEffect(() => {
+    if (collectionPerfume) return;
     if (!imageUri) return;
     identify();
     return () => {
       if (stepInterval.current) clearInterval(stepInterval.current);
     };
-  }, [imageUri]);
+  }, [imageUri, collectionPerfume, identify]);
 
   useEffect(() => {
+    if (collectionPerfume) return;
     if (currentStep < STEPS.length - 1) return;
     if (error) return;
 
@@ -302,17 +370,18 @@ export default function ResultScreen() {
     }, 1500);
 
     return () => clearTimeout(checkResult);
-  }, [currentStep, error]);
+  }, [currentStep, error, collectionPerfume, showSuccess, showError]);
 
   const handleSave = async () => {
     if (!result || savedToCollection || saving) return;
+    if (!displayImageUri) return;
     setSaving(true);
     try {
-      const uploaded = await uploadImage(imageUri!);
+      const uploaded = await uploadImage(displayImageUri);
       await addToCollection(result, { imageKey: uploaded.key });
     } catch {
       try {
-        await addToCollection(result, { imageUri });
+        await addToCollection(result, { imageUri: displayImageUri });
       } catch {}
     }
     setSavedToCollection(true);
@@ -424,12 +493,16 @@ export default function ResultScreen() {
           <Text style={styles.errorTitle}>Identification Failed</Text>
           <Text style={styles.errorText}>{error}</Text>
           <View style={styles.errorActions}>
-            <TouchableOpacity style={styles.retryButton} onPress={identify}>
-              <Ionicons name="refresh" size={20} color="#fff" />
-              <Text style={styles.retryText}>Try Again</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/')}>
-              <Text style={styles.backText}>Take New Photo</Text>
+            {imageUri && !collectionPerfume ? (
+              <TouchableOpacity style={styles.retryButton} onPress={identify}>
+                <Ionicons name="refresh" size={20} color="#fff" />
+                <Text style={styles.retryText}>Try Again</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={styles.backButton} onPress={leaveResult}>
+              <Text style={styles.backText}>
+                {fromCollection === '1' ? 'Back' : 'Take New Photo'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -449,11 +522,16 @@ export default function ResultScreen() {
           <View style={styles.resultHeroWrap}>
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => setPhotoFullscreen(true)}
+              disabled={!displayImageUri}
+              onPress={() => displayImageUri && setPhotoFullscreen(true)}
             >
               <View style={styles.resultFrame}>
-                {imageUri && (
-                  <Image source={{ uri: imageUri }} style={styles.resultFrameImage} />
+                {displayImageUri ? (
+                  <Image source={{ uri: displayImageUri }} style={styles.resultFrameImage} />
+                ) : (
+                  <View style={styles.resultFramePlaceholder}>
+                    <Ionicons name="flask-outline" size={48} color={Colors.primary} />
+                  </View>
                 )}
               </View>
             </TouchableOpacity>
@@ -464,7 +542,7 @@ export default function ResultScreen() {
             <View style={[styles.resultBackRow, { paddingTop: insets.top + Spacing.sm }]}>
               <TouchableOpacity
                 style={styles.heroBackButton}
-                onPress={() => router.replace('/')}
+                onPress={leaveResult}
               >
                 <Ionicons name="arrow-back" size={24} color="#fff" />
               </TouchableOpacity>
@@ -635,43 +713,66 @@ export default function ResultScreen() {
 
         {/* Sticky footer bar */}
         <View style={[styles.footerBar, { paddingBottom: insets.bottom || Spacing.md }]}>
-          <TouchableOpacity
-            style={styles.retakeButton}
-            onPress={() => router.replace('/camera')}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="camera-outline" size={22} color={Colors.text} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.addCollectionButton,
-              savedToCollection && styles.addCollectionButtonDone,
-            ]}
-            onPress={handleSave}
-            activeOpacity={0.8}
-            disabled={savedToCollection || saving}
-          >
-            <LinearGradient
-              colors={savedToCollection ? ['#2a6e2a', '#1e5e1e'] : [Colors.primary, Colors.primaryDark]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.addCollectionGradient}
+          {fromCollection === '1' ? (
+            <TouchableOpacity
+              style={styles.addCollectionButton}
+              activeOpacity={0.85}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.replace('/camera');
+              }}
             >
-              {saving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Ionicons
-                  name={savedToCollection ? 'checkmark-circle' : 'add-circle-outline'}
-                  size={20}
-                  color="#fff"
-                />
-              )}
-              <Text style={styles.addCollectionText}>
-                {savedToCollection ? 'Saved' : saving ? 'Saving...' : 'Add to Collection'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[Colors.primary, Colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.addCollectionGradient}
+              >
+                <Ionicons name="scan-outline" size={22} color="#fff" />
+                <Text style={styles.addCollectionText}>Identify</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.retakeButton}
+                onPress={() => router.replace('/camera')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera-outline" size={22} color={Colors.text} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.addCollectionButton,
+                  savedToCollection && styles.addCollectionButtonDone,
+                ]}
+                onPress={handleSave}
+                activeOpacity={0.8}
+                disabled={savedToCollection || saving}
+              >
+                <LinearGradient
+                  colors={savedToCollection ? ['#2a6e2a', '#1e5e1e'] : [Colors.primary, Colors.primaryDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.addCollectionGradient}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons
+                      name={savedToCollection ? 'checkmark-circle' : 'add-circle-outline'}
+                      size={20}
+                      color="#fff"
+                    />
+                  )}
+                  <Text style={styles.addCollectionText}>
+                    {savedToCollection ? 'Saved' : saving ? 'Saving...' : 'Add to Collection'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* Fullscreen Photo Modal */}
@@ -688,9 +789,9 @@ export default function ResultScreen() {
               activeOpacity={1}
               onPress={() => setPhotoFullscreen(false)}
             />
-            {imageUri && (
+            {displayImageUri && (
               <Image
-                source={{ uri: imageUri }}
+                source={{ uri: displayImageUri }}
                 style={styles.fullscreenImage}
                 resizeMode="contain"
               />
@@ -762,8 +863,8 @@ export default function ResultScreen() {
                 style={styles.frameGradientInner}
               >
                 <View style={styles.photoClip}>
-                  {imageUri && (
-                    <Image source={{ uri: imageUri }} style={styles.photoFrameImage} />
+                  {displayImageUri && (
+                    <Image source={{ uri: displayImageUri }} style={styles.photoFrameImage} />
                   )}
                   {/* Diagonal shine sweep across the photo */}
                   <Animated.View style={[styles.shineSweep, shineSweepStyle]} pointerEvents="none">
@@ -1057,6 +1158,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+  },
+  resultFramePlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
   },
   resultHeroFade: {
     position: 'absolute',
