@@ -51,6 +51,81 @@ const CAMERA_CARD_HEIGHT = CAMERA_CARD_WIDTH * 1.32;
 const CAMERA_CARD_LEFT = 20;
 const CAMERA_CARD_BORDER_RADIUS = 20;
 
+function randomParticleConfig() {
+  return {
+    startX: Math.random() * SCREEN_WIDTH,
+    size: 2 + Math.random() * 5,
+    duration: 7000 + Math.random() * 7000,
+    drift: (Math.random() - 0.5) * 70,
+  };
+}
+
+interface ParticleProps {
+  initialDelay: number;
+}
+
+function Particle({ initialDelay }: ParticleProps) {
+  const [config, setConfig] = useState(randomParticleConfig);
+  const progress = useSharedValue(0);
+  const mounted = useRef(true);
+
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  const respawn = useCallback(() => {
+    if (mounted.current) setConfig(randomParticleConfig());
+  }, []);
+
+  useEffect(() => {
+    const start = () => {
+      progress.value = 0;
+      progress.value = withTiming(
+        1,
+        { duration: config.duration, easing: Easing.linear },
+        (finished) => {
+          if (finished) runOnJS(respawn)();
+        },
+      );
+    };
+    const timer = setTimeout(start, initialDelay);
+    return () => clearTimeout(timer);
+  }, [config]);
+
+  const style = useAnimatedStyle(() => {
+    const ty = interpolate(progress.value, [0, 1], [SCREEN_HEIGHT + 40, -80]);
+    const tx = interpolate(progress.value, [0, 0.5, 1], [0, config.drift, 0]);
+    const opacity = interpolate(
+      progress.value,
+      [0, 0.1, 0.85, 1],
+      [0, 1, 1, 0],
+    );
+    return {
+      transform: [{ translateY: ty }, { translateX: tx }],
+      opacity,
+    };
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.particle,
+        {
+          left: config.startX,
+          width: config.size,
+          height: config.size,
+          borderRadius: config.size / 2,
+        },
+        style,
+      ]}
+    />
+  );
+}
+
+const PARTICLE_COUNT = 40;
+const PARTICLE_DELAYS = Array.from({ length: PARTICLE_COUNT }, (_, i) =>
+  Math.round((i / PARTICLE_COUNT) * 8000 + Math.random() * 500),
+);
+
 export default function ResultScreen() {
   const { imageUri } = useLocalSearchParams<{ imageUri: string }>();
   const [result, setResult] = useState<PerfumeResult | null>(null);
@@ -125,64 +200,8 @@ export default function ResultScreen() {
     );
   }, []);
 
-  useEffect(() => {
-    if (!imageUri) return;
-    identify();
-  }, [imageUri]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentStep((prev) => {
-        if (prev < STEPS.length - 1) return prev + 1;
-        return prev;
-      });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (currentStep < STEPS.length - 1) return;
-
-    const checkResult = setTimeout(() => {
-      const res = apiResult.current;
-      if (!res) {
-        const poll = setInterval(() => {
-          if (apiResult.current) {
-            clearInterval(poll);
-            handleApiResult(apiResult.current);
-          }
-        }, 300);
-      } else {
-        handleApiResult(res);
-      }
-    }, 2000);
-
-    return () => clearTimeout(checkResult);
-  }, [currentStep]);
-
-  const handleApiResult = (res: { perfume?: PerfumeResult; error?: string }) => {
-    if (res.error) {
-      setError(res.error);
-      setLoading(false);
-      return;
-    }
-    if (res.perfume) {
-      setResult(res.perfume);
-      setLoading(false);
-      setCurrentStep(STEPS.length);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-      setTimeout(() => {
-        transitionProgress.value = withTiming(1, {
-          duration: 800,
-          easing: Easing.inOut(Easing.cubic),
-        });
-        setTimeout(() => onTransitionDone(), 850);
-      }, 600);
-    }
-  };
-
   const apiResult = useRef<{ perfume?: PerfumeResult; error?: string } | null>(null);
+  const stepInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const readAsBase64 = async (uri: string): Promise<string> => {
     const response = await fetch(uri);
@@ -198,15 +217,92 @@ export default function ResultScreen() {
     });
   };
 
-  const identify = async () => {
+  const formatError = (msg: string): string => {
+    if (msg.includes('Rate limit')) return 'Too many scans — please wait a minute and try again.';
+    if (msg.includes('timed out')) return 'The server is taking too long. Check your connection and try again.';
+    if (msg.includes('Cannot reach') || msg.includes('Network request failed')) return 'No internet connection. Please check your network and try again.';
+    if (msg.includes('Image too large')) return 'That photo is too large. Try taking a new one closer up.';
+    if (msg.includes('AI service error')) return 'Our AI service is temporarily down. Please try again shortly.';
+    return msg || 'Something went wrong. Please try again.';
+  };
+
+  const showError = useCallback((msg: string) => {
+    if (stepInterval.current) clearInterval(stepInterval.current);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    setError(formatError(msg));
+    setLoading(false);
+  }, []);
+
+  const showSuccess = useCallback((perfume: PerfumeResult) => {
+    setResult(perfume);
+    setLoading(false);
+    setCurrentStep(STEPS.length);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(() => {
+      transitionProgress.value = withTiming(1, {
+        duration: 800,
+        easing: Easing.inOut(Easing.cubic),
+      });
+      setTimeout(() => onTransitionDone(), 850);
+    }, 600);
+  }, []);
+
+  const startStepAnimation = useCallback(() => {
+    if (stepInterval.current) clearInterval(stepInterval.current);
+    stepInterval.current = setInterval(() => {
+      setCurrentStep((prev) => {
+        if (prev < STEPS.length - 1) return prev + 1;
+        return prev;
+      });
+    }, 2000);
+  }, []);
+
+  const identify = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    setCurrentStep(0);
+    apiResult.current = null;
+    startStepAnimation();
+
     try {
       const base64 = await readAsBase64(imageUri!);
       const perfume = await identifyPerfume(base64);
       apiResult.current = { perfume };
     } catch (err: any) {
-      apiResult.current = { error: err.message || 'Something went wrong. Please try again.' };
+      showError(err.message);
     }
-  };
+  }, [imageUri, showError, startStepAnimation]);
+
+  useEffect(() => {
+    if (!imageUri) return;
+    identify();
+    return () => {
+      if (stepInterval.current) clearInterval(stepInterval.current);
+    };
+  }, [imageUri]);
+
+  useEffect(() => {
+    if (currentStep < STEPS.length - 1) return;
+    if (error) return;
+
+    const checkResult = setTimeout(() => {
+      const res = apiResult.current;
+      if (!res) {
+        const poll = setInterval(() => {
+          if (apiResult.current) {
+            clearInterval(poll);
+            if (apiResult.current.error) showError(apiResult.current.error);
+            else if (apiResult.current.perfume) showSuccess(apiResult.current.perfume);
+          }
+        }, 300);
+      } else {
+        if (res.error) showError(res.error);
+        else if (res.perfume) showSuccess(res.perfume);
+      }
+    }, 1500);
+
+    return () => clearTimeout(checkResult);
+  }, [currentStep, error]);
 
   const handleSave = async () => {
     if (!result || savedToCollection || saving) return;
@@ -228,6 +324,7 @@ export default function ResultScreen() {
     opacity: bgOpacity.value,
   }));
 
+
   const borderStyle = useAnimatedStyle(() => ({
     opacity: borderOpacity.value,
   }));
@@ -236,27 +333,35 @@ export default function ResultScreen() {
     const p = progress.value;
     const t = transitionProgress.value;
 
-    const baseLeft = interpolate(p, [0, 1], [CAMERA_CARD_LEFT, finalX]);
-    const baseTop = interpolate(p, [0, 1], [cameraCardTop, finalY]);
-    const baseW = interpolate(p, [0, 1], [CAMERA_CARD_WIDTH, frameOuterW]);
-    const baseH = interpolate(p, [0, 1], [CAMERA_CARD_HEIGHT, frameOuterH]);
-    const baseBr = interpolate(p, [0, 1], [CAMERA_CARD_BORDER_RADIUS, 8]);
+    const baseScaleX = interpolate(p, [0, 1], [CAMERA_CARD_WIDTH / frameOuterW, 1]);
+    const baseScaleY = interpolate(p, [0, 1], [CAMERA_CARD_HEIGHT / frameOuterH, 1]);
+    const baseTX = interpolate(p, [0, 1], [
+      CAMERA_CARD_LEFT + CAMERA_CARD_WIDTH / 2 - (finalX + frameOuterW / 2),
+      0,
+    ]);
+    const baseTY = interpolate(p, [0, 1], [
+      cameraCardTop + CAMERA_CARD_HEIGHT / 2 - (finalY + frameOuterH / 2),
+      0,
+    ]);
 
-    const left = interpolate(t, [0, 1], [baseLeft, heroX]);
-    const top = interpolate(t, [0, 1], [baseTop, heroY]);
-    const w = interpolate(t, [0, 1], [baseW, heroW]);
-    const h = interpolate(t, [0, 1], [baseH, heroH]);
-    const br = interpolate(t, [0, 1], [baseBr, 12]);
+    const scaleX = interpolate(t, [0, 1], [baseScaleX, heroW / frameOuterW]);
+    const scaleY = interpolate(t, [0, 1], [baseScaleY, heroH / frameOuterH]);
+    const tx = interpolate(t, [0, 1], [baseTX, heroX + heroW / 2 - (finalX + frameOuterW / 2)]);
+    const ty = interpolate(t, [0, 1], [baseTY, heroY + heroH / 2 - (finalY + frameOuterH / 2)]);
     const rotate = interpolate(t, [0, 1], [frameRotate.value, 0]);
 
     return {
       position: 'absolute' as const,
-      left,
-      top,
-      width: w,
-      height: h,
-      borderRadius: br,
+      left: finalX,
+      top: finalY,
+      width: frameOuterW,
+      height: frameOuterH,
+      borderRadius: 8,
       transform: [
+        { translateX: tx },
+        { translateY: ty },
+        { scaleX },
+        { scaleY },
         { rotate: `${rotate}deg` },
       ],
     };
@@ -614,37 +719,75 @@ export default function ResultScreen() {
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
+
+        {/* Floating golden particles drifting upward */}
+        <View style={styles.particleLayer} pointerEvents="none">
+          {PARTICLE_DELAYS.map((delay, i) => (
+            <Particle key={i} initialDelay={delay} />
+          ))}
+        </View>
+
         <View style={styles.accentLineTop} />
         <View style={styles.accentLineBot} />
       </Animated.View>
 
+      {/* Close button */}
+      <TouchableOpacity
+        style={[styles.processingClose, { top: insets.top + Spacing.sm }]}
+        onPress={() => router.replace('/camera')}
+        activeOpacity={0.7}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="close" size={26} color="#fff" />
+      </TouchableOpacity>
+
       {/* Photo frame - animates from camera card position to final position */}
-      <Animated.View style={[frameAnimStyle, { zIndex: 2 }]}>
-        <View style={styles.photoClip}>
-          {imageUri && (
-            <Image source={{ uri: imageUri }} style={styles.photoFrameImage} />
-          )}
-          {/* Diagonal shine sweep across the photo */}
-          <Animated.View style={[styles.shineSweep, shineSweepStyle]} pointerEvents="none">
-            <LinearGradient
-              colors={[
-                'transparent',
-                'rgba(255,220,140,0.0)',
-                'rgba(255,220,140,0.55)',
-                'rgba(255,255,220,0.85)',
-                'rgba(255,220,140,0.55)',
-                'rgba(255,220,140,0.0)',
-                'transparent',
-              ]}
-              locations={[0, 0.3, 0.45, 0.5, 0.55, 0.7, 1]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </Animated.View>
-        </View>
-        {/* Golden frame border */}
-        <Animated.View style={[styles.frameBorder, borderStyle]} pointerEvents="none" />
+      <Animated.View
+        style={[frameAnimStyle, { zIndex: 2 }]}
+        renderToHardwareTextureAndroid
+        shouldRasterizeIOS
+      >
+        <Animated.View style={[styles.frameBorderOuter, borderStyle]} pointerEvents="box-none">
+          <LinearGradient
+            colors={['#dcc07a', '#c4a060', '#8a6e30']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.frameGradientOuter}
+          >
+            <View style={styles.frameInset}>
+              <LinearGradient
+                colors={['#8a6e30', '#b8953e', '#dcc07a']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.frameGradientInner}
+              >
+                <View style={styles.photoClip}>
+                  {imageUri && (
+                    <Image source={{ uri: imageUri }} style={styles.photoFrameImage} />
+                  )}
+                  {/* Diagonal shine sweep across the photo */}
+                  <Animated.View style={[styles.shineSweep, shineSweepStyle]} pointerEvents="none">
+                    <LinearGradient
+                      colors={[
+                        'transparent',
+                        'rgba(255,220,140,0.0)',
+                        'rgba(255,220,140,0.55)',
+                        'rgba(255,255,220,0.85)',
+                        'rgba(255,220,140,0.55)',
+                        'rgba(255,220,140,0.0)',
+                        'transparent',
+                      ]}
+                      locations={[0, 0.3, 0.45, 0.5, 0.55, 0.7, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  </Animated.View>
+                </View>
+              </LinearGradient>
+            </View>
+          </LinearGradient>
+        </Animated.View>
       </Animated.View>
 
       {/* Processing steps */}
@@ -712,6 +855,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  particleLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  particle: {
+    position: 'absolute',
+    backgroundColor: '#dcc07a',
+    shadowColor: '#dcc07a',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+  },
+  processingClose: {
+    position: 'absolute',
+    left: Spacing.lg,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   accentLineTop: {
     position: 'absolute',
     top: '18%',
@@ -737,26 +903,9 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT * 0.5,
   },
 
-  photoClip: {
+  frameBorderOuter: {
     flex: 1,
-    borderRadius: 6,
-    overflow: 'hidden',
-    margin: 10,
-  },
-  photoFrameImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  frameBorder: {
-    ...StyleSheet.absoluteFillObject,
     borderRadius: 8,
-    backgroundColor: '#c4a060',
-    borderWidth: 1.5,
-    borderTopColor: '#dcc07a',
-    borderLeftColor: '#d4b46e',
-    borderRightColor: '#a88540',
-    borderBottomColor: '#8a6e30',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -766,7 +915,33 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 16 },
     }),
-    zIndex: -1,
+  },
+  frameGradientOuter: {
+    flex: 1,
+    borderRadius: 8,
+    padding: 5,
+  },
+  frameInset: {
+    flex: 1,
+    borderRadius: 5,
+    backgroundColor: '#0c0a08',
+    padding: 2,
+  },
+  frameGradientInner: {
+    flex: 1,
+    borderRadius: 4,
+    padding: 4,
+  },
+  photoClip: {
+    flex: 1,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+  },
+  photoFrameImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
 
   stepsWrap: {

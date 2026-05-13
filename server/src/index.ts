@@ -2,7 +2,6 @@ interface Env {
   OPENAI_API_KEY: string;
   DB: D1Database;
   IMAGES: R2Bucket;
-  RATE_LIMIT: KVNamespace;
 }
 
 const SYSTEM_PROMPT = `You are PerfumeSnap, the world's best AI perfume identifier. You ALWAYS identify the perfume shown — even from partial labels, blurry images, side angles, or just the bottle silhouette. You have encyclopedic knowledge of every perfume ever made.
@@ -56,9 +55,7 @@ const MAX_IMAGE_BYTES = 12 * 1024 * 1024; // 12 MB upload cap
 const MAX_PAGE_SIZE = 50;
 const DEFAULT_PAGE_SIZE = 20;
 
-// Rate limit knobs
-const IDENTIFY_LIMIT_PER_HOUR = 30;
-const UPLOAD_LIMIT_PER_HOUR = 60;
+
 
 function jsonResponse(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
@@ -84,35 +81,6 @@ function getUserId(request: Request): string | null {
   return isValidUserId(queryId) ? queryId! : null;
 }
 
-/**
- * Simple sliding-window rate limit keyed by userId + scope.
- * Returns null if allowed, or a Response with 429 if blocked.
- */
-async function rateLimit(
-  env: Env,
-  userId: string,
-  scope: string,
-  limit: number,
-  windowSeconds = 3600,
-): Promise<Response | null> {
-  const now = Math.floor(Date.now() / 1000);
-  const windowKey = Math.floor(now / windowSeconds);
-  const key = `rl:${scope}:${userId}:${windowKey}`;
-  const raw = await env.RATE_LIMIT.get(key);
-  const current = raw ? parseInt(raw, 10) : 0;
-  if (current >= limit) {
-    const resetIn = (windowKey + 1) * windowSeconds - now;
-    return jsonResponse(
-      { error: 'Rate limit exceeded', retryAfterSeconds: resetIn },
-      429,
-      { 'Retry-After': String(resetIn) },
-    );
-  }
-  await env.RATE_LIMIT.put(key, String(current + 1), {
-    expirationTtl: windowSeconds + 60,
-  });
-  return null;
-}
 
 function publicImageUrl(request: Request, key: string): string {
   const url = new URL(request.url);
@@ -166,12 +134,6 @@ export default {
 // ----------------------------- Handlers -----------------------------
 
 async function handleIdentify(request: Request, env: Env): Promise<Response> {
-  const userId = getUserId(request);
-  if (userId) {
-    const blocked = await rateLimit(env, userId, 'identify', IDENTIFY_LIMIT_PER_HOUR);
-    if (blocked) return blocked;
-  }
-
   if (!env.OPENAI_API_KEY) {
     return jsonResponse({ error: 'Server misconfigured: missing API key' }, 500);
   }
@@ -244,9 +206,6 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
 async function handleUpload(request: Request, env: Env): Promise<Response> {
   const userId = getUserId(request);
   if (!userId) return jsonResponse({ error: 'Missing or invalid userId' }, 400);
-
-  const blocked = await rateLimit(env, userId, 'upload', UPLOAD_LIMIT_PER_HOUR);
-  if (blocked) return blocked;
 
   const contentType = request.headers.get('content-type') || 'image/jpeg';
   if (!contentType.startsWith('image/')) {

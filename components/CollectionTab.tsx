@@ -302,19 +302,33 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
             color={selectedIds.has(item.id) ? Colors.primary : Colors.textMuted}
           />
         </Animated.View>
-        {/* Photo with golden frame + tilt */}
+        {/* Photo with beveled golden frame */}
         <View style={styles.photoOuter}>
-          <View style={styles.photoFrame}>
-            <View style={styles.photoInner}>
-              {p.imageUri ? (
-                <Image source={{ uri: p.imageUri }} style={styles.photo} />
-              ) : (
-                <View style={styles.photoPlaceholder}>
-                  <Ionicons name="flask-outline" size={32} color={Colors.primary} />
+          <LinearGradient
+            colors={['#dcc07a', '#c4a060', '#8a6e30']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.photoFrame}
+          >
+            <View style={styles.photoFrameInset}>
+              <LinearGradient
+                colors={['#8a6e30', '#b8953e', '#dcc07a']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.photoFrameInner}
+              >
+                <View style={styles.photoClip}>
+                  {p.imageUri ? (
+                    <Image source={{ uri: p.imageUri }} style={styles.photo} />
+                  ) : (
+                    <View style={styles.photoPlaceholder}>
+                      <Ionicons name="flask-outline" size={32} color={Colors.primary} />
+                    </View>
+                  )}
                 </View>
-              )}
+              </LinearGradient>
             </View>
-          </View>
+          </LinearGradient>
         </View>
 
         {/* Info */}
@@ -542,34 +556,39 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border + '50',
   },
   photoOuter: {
-    width: PHOTO_WIDTH + 16,
-    height: PHOTO_HEIGHT + 16,
+    width: PHOTO_WIDTH + 18 + 8,
+    height: PHOTO_HEIGHT + 18 + 8,
+    padding: 4,
     transform: [{ rotate: '-2deg' }],
-  },
-  photoFrame: {
-    width: PHOTO_WIDTH + 16,
-    height: PHOTO_HEIGHT + 16,
-    borderRadius: 6,
-    backgroundColor: '#c4a060',
-    padding: 5,
-    borderWidth: 1,
-    borderTopColor: '#dcc07a',
-    borderLeftColor: '#d4b46e',
-    borderRightColor: '#a88540',
-    borderBottomColor: '#8a6e30',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 2, height: 4 },
-        shadowOpacity: 0.4,
+        shadowOpacity: 0.45,
         shadowRadius: 10,
       },
-      android: { elevation: 6 },
+      android: { elevation: 8 },
     }),
   },
-  photoInner: {
+  photoFrame: {
+    flex: 1,
+    borderRadius: 6,
+    padding: 3,
+  },
+  photoFrameInset: {
+    flex: 1,
+    borderRadius: 4,
+    backgroundColor: '#0c0a08',
+    padding: 1.5,
+  },
+  photoFrameInner: {
     flex: 1,
     borderRadius: 3,
+    padding: 2.5,
+  },
+  photoClip: {
+    flex: 1,
+    borderRadius: 2,
     overflow: 'hidden',
     backgroundColor: Colors.surface,
   },
