@@ -8,20 +8,21 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  Dimensions,
   Platform,
   Alert,
   LayoutAnimation,
   UIManager,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import Animated, {
   useAnimatedStyle,
+  useAnimatedScrollHandler,
   useSharedValue,
   withTiming,
+  interpolate,
   Easing,
 } from 'react-native-reanimated';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
@@ -31,7 +32,6 @@ const EDIT_ANIM_DURATION = 280;
 const CHECKBOX_ICON = 26;
 const CHECKBOX_WIDTH = CHECKBOX_ICON + Math.round(Spacing.lg * 0.6);
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_WIDTH = 90;
 const PHOTO_HEIGHT = PHOTO_WIDTH * 1.3;
 
@@ -54,6 +54,7 @@ interface CollectionTabProps {
 const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   ({ onEditStateChange }, ref) => {
   const insets = useSafeAreaInsets();
+  const ICON_BAR_HEIGHT = insets.top + 48;
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -204,6 +205,22 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     return { count: items.length, brands: brands.size, totalValue: Math.round(totalValue) };
   }, [items]);
 
+  const scrollY = useSharedValue(-ICON_BAR_HEIGHT);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y;
+    },
+  });
+
+  const heroBlurStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [-ICON_BAR_HEIGHT, -ICON_BAR_HEIGHT + 36],
+      [0, 1],
+      'clamp',
+    ),
+  }));
+
   const renderToolbar = () => (
     editing ? (
       <View style={styles.toolbar}>
@@ -241,33 +258,30 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     )
   );
 
-  const renderHeader = () => {
-    if (items.length === 0) return null;
-    return (
-      <View style={styles.statsSection}>
-        {/* Collection Value */}
-        <View style={styles.valueWrap}>
-          <Text style={styles.valueCurrency}>$</Text>
-          <Text style={styles.valueAmount}>{stats.totalValue.toLocaleString()}</Text>
-        </View>
-        <Text style={styles.valueLabel}>Estimated Collection Value</Text>
-
-        {/* Stats row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.count}</Text>
-            <Text style={styles.statLabel}>Items</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.brands}</Text>
-            <Text style={styles.statLabel}>Brands</Text>
-          </View>
-        </View>
-
+  const renderHero = () => (
+    <View style={styles.statsSection}>
+      <View style={styles.valueWrap}>
+        <Text style={styles.valueCurrency}>$</Text>
+        <Text style={styles.valueAmount}>{stats.totalValue.toLocaleString()}</Text>
       </View>
-    );
-  };
+
+      <View style={styles.valueLabelWrap}>
+        <Text style={styles.valueLabel}>Estimated Collection Value</Text>
+      </View>
+
+      <View style={styles.statsRow}>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{stats.count}</Text>
+          <Text style={styles.statLabel}>Items</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{stats.brands}</Text>
+          <Text style={styles.statLabel}>Brands</Text>
+        </View>
+      </View>
+    </View>
+  );
 
   type ToolbarRow = { __toolbar: true };
   type ListRow = ToolbarRow | CollectionItem;
@@ -282,7 +296,12 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
   const renderItem = ({ item }: { item: ListRow }) => {
     if (isToolbarRow(item)) {
-      return <View style={styles.stickyToolbar}>{renderToolbar()}</View>;
+      return (
+        <View style={styles.stickyToolbar}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.iconBarFill, heroBlurStyle]} pointerEvents="none" />
+          {renderToolbar()}
+        </View>
+      );
     }
     const p = item.perfume;
     const dateStr = new Date(item.createdAt).toLocaleDateString('en-US', {
@@ -350,11 +369,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       colors={[Colors.background, '#12100c', Colors.background]}
       style={styles.gradient}
     >
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <Text style={styles.title}>My Collection</Text>
-        </View>
-
+      <View style={styles.container}>
         {loading ? (
           <View style={styles.centerState}>
             <ActivityIndicator size="large" color={Colors.primary} />
@@ -379,34 +394,55 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
             </Text>
           </View>
         ) : (
-          <FlatList
-            data={listData}
-            keyExtractor={(it) => (isToolbarRow(it) ? 'toolbar' : it.id)}
-            renderItem={renderItem}
-            ListHeaderComponent={renderHeader}
-            stickyHeaderIndices={[1]}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={Colors.primary}
-              />
-            }
-            onEndReachedThreshold={0.5}
-            onEndReached={loadMore}
-            ListFooterComponent={
-              loadingMore ? (
-                <View style={{ paddingVertical: Spacing.lg }}>
-                  <ActivityIndicator color={Colors.primary} />
-                </View>
-              ) : null
-            }
-          />
+          <>
+            <Animated.FlatList
+              data={listData}
+              keyExtractor={(it) => (isToolbarRow(it) ? 'toolbar' : it.id)}
+              renderItem={renderItem}
+              ListHeaderComponent={renderHero}
+              stickyHeaderIndices={[1]}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              onScroll={scrollHandler}
+              contentInset={Platform.OS === 'ios' ? { top: ICON_BAR_HEIGHT } : undefined}
+              contentOffset={Platform.OS === 'ios' ? { x: 0, y: -ICON_BAR_HEIGHT } : undefined}
+              scrollIndicatorInsets={Platform.OS === 'ios' ? { top: ICON_BAR_HEIGHT } : undefined}
+              contentInsetAdjustmentBehavior="never"
+              automaticallyAdjustContentInsets={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={Colors.primary}
+                  progressViewOffset={ICON_BAR_HEIGHT}
+                />
+              }
+              onEndReachedThreshold={0.5}
+              onEndReached={loadMore}
+              scrollEventThrottle={16}
+              ListFooterComponent={
+                loadingMore ? (
+                  <View style={{ paddingVertical: Spacing.lg }}>
+                    <ActivityIndicator color={Colors.primary} />
+                  </View>
+                ) : null
+              }
+            />
+
+            {/* Icon bar — transparent at rest, solid color when scrolled */}
+            <View style={[styles.fixedHeader, { paddingTop: insets.top, height: ICON_BAR_HEIGHT }]}>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.iconBarFill, heroBlurStyle]} pointerEvents="none" />
+              <View style={styles.headerIcons}>
+                <TouchableOpacity hitSlop={8}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
+                <TouchableOpacity hitSlop={8}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
+                <TouchableOpacity hitSlop={8}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
+                <TouchableOpacity hitSlop={8}><Ionicons name="ellipsis-horizontal" size={22} color={Colors.text} /></TouchableOpacity>
+              </View>
+            </View>
+          </>
         )}
 
-      </SafeAreaView>
+      </View>
 
     </LinearGradient>
   );
@@ -418,30 +454,40 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   container: {
     flex: 1,
-    paddingHorizontal: Spacing.lg,
   },
-  header: {
+  fixedHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingLeft: Spacing.lg,
+    paddingRight: Spacing.md,
+    paddingBottom: Spacing.sm,
+    zIndex: 100,
+  },
+  iconBarFill: {
+    backgroundColor: '#12100c',
+  },
+  headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: Spacing.xl,
-    marginBottom: Spacing.md,
-  },
-  title: {
-    fontSize: FontSizes.xxl,
-    fontWeight: '800',
-    color: Colors.text,
-    letterSpacing: -0.5,
+    gap: Spacing.lg,
   },
 
   // Stats hero
   statsSection: {
-    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
   },
   valueWrap: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 2,
+    alignSelf: 'flex-start',
   },
   valueCurrency: {
     fontSize: FontSizes.xl,
@@ -455,11 +501,14 @@ const styles = StyleSheet.create({
     color: Colors.text,
     letterSpacing: -2,
   },
+  valueLabelWrap: {
+    alignSelf: 'flex-start',
+    marginTop: -2,
+    marginBottom: Spacing.lg,
+  },
   valueLabel: {
     fontSize: FontSizes.sm,
     color: Colors.textSecondary,
-    marginTop: -2,
-    marginBottom: Spacing.lg,
   },
   statsRow: {
     flexDirection: 'row',
@@ -496,7 +545,8 @@ const styles = StyleSheet.create({
   stickyToolbar: {
     paddingTop: 6,
     paddingBottom: Spacing.sm,
-    backgroundColor: '#12100c',
+    paddingHorizontal: Spacing.lg,
+    overflow: 'hidden',
   },
   toolbar: {
     flexDirection: 'row',
@@ -552,6 +602,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border + '50',
   },

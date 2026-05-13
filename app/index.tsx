@@ -272,9 +272,9 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     ...Platform.select({
       ios: {
-        shadowColor: '#c8943c',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.35,
         shadowRadius: 14,
       },
       android: {
@@ -313,10 +313,10 @@ const styles = StyleSheet.create({
     borderRadius: CAMERA_BTN_SIZE / 2,
     ...Platform.select({
       ios: {
-        shadowColor: Colors.primary,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
+        shadowOpacity: 0.45,
+        shadowRadius: 14,
       },
       android: {
         elevation: 10,
@@ -341,9 +341,9 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(200,148,60,0.2)',
     ...Platform.select({
       ios: {
-        shadowColor: '#c8943c',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.35,
         shadowRadius: 14,
       },
       android: { elevation: 20 },
