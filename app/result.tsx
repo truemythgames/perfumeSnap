@@ -16,7 +16,6 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -35,10 +34,22 @@ import Animated, {
   runOnJS,
   Extrapolation,
 } from 'react-native-reanimated';
-import { identifyPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage } from '../services/api';
+import * as WebBrowser from 'expo-web-browser';
+import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings } from '../services/api';
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
+
+const BADGE_MAP: Record<string, string> = { amazon: 'Amazon', ebay: 'eBay', walmart: 'Walmart' };
+
+function getBadgeLabel(retailer?: string): string | null {
+  if (!retailer) return null;
+  const key = retailer.toLowerCase();
+  for (const [match, label] of Object.entries(BADGE_MAP)) {
+    if (key.includes(match)) return label;
+  }
+  return null;
+}
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -137,11 +148,49 @@ const PARTICLE_DELAYS = Array.from({ length: PARTICLE_COUNT }, (_, i) =>
   Math.round((i / PARTICLE_COUNT) * 8000 + Math.random() * 500),
 );
 
+function SimilarCardSmall({ perfume }: { perfume: SimilarPerfume }) {
+  const [imageUrl, setImageUrl] = useState<string | null>(perfume.imageUrl || null);
+  const [failed, setFailed] = useState(false);
+  const directUrl = perfume.productUrl || buildShoppingUrl(perfume.name, perfume.brand, perfume.retailer);
+
+  const hasImage = Boolean(imageUrl) && !failed;
+
+  return (
+    <TouchableOpacity
+      style={styles.similarCard}
+      activeOpacity={0.85}
+      onPress={() => WebBrowser.openBrowserAsync(directUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET })}
+    >
+      <View style={styles.similarImageWrap}>
+        {!hasImage && (
+          <View style={styles.similarImageFallback}>
+            <Ionicons name="flask-outline" size={40} color="#b8953e" />
+          </View>
+        )}
+        {hasImage ? (
+          <Image source={{ uri: imageUrl! }} style={styles.similarCardImage} resizeMode="cover" onError={() => setFailed(true)} />
+        ) : null}
+        {getBadgeLabel(perfume.retailer) ? (
+          <View style={styles.retailerBadge}>
+            <Text style={styles.retailerBadgeText}>{getBadgeLabel(perfume.retailer)}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={styles.similarPriceCheck}>Check Site</Text>
+      <Text style={styles.similarName} numberOfLines={2}>
+        {perfume.brand} {perfume.name}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function ResultScreen() {
   const params = useLocalSearchParams<{
     imageUri?: string;
     prefill?: string;
     fromCollection?: string;
+    lookupName?: string;
+    lookupBrand?: string;
   }>();
 
   const imageUri = useMemo(() => {
@@ -162,15 +211,31 @@ export default function ResultScreen() {
     return v;
   }, [params.fromCollection]);
 
+  const lookupName = useMemo(() => {
+    const v = params.lookupName;
+    if (Array.isArray(v)) return v[0];
+    return v;
+  }, [params.lookupName]);
+
+  const lookupBrand = useMemo(() => {
+    const v = params.lookupBrand;
+    if (Array.isArray(v)) return v[0];
+    return v;
+  }, [params.lookupBrand]);
+
+  const isLookupMode = Boolean(lookupName);
+
   const collectionPerfume = useMemo((): (PerfumeResult & {
     imageUri?: string | null;
     imageKey?: string | null;
+    cachedSimilarListings?: SimilarPerfume[];
   }) | null => {
     if (!prefillRaw) return null;
     try {
       return JSON.parse(prefillRaw) as PerfumeResult & {
         imageUri?: string | null;
         imageKey?: string | null;
+        cachedSimilarListings?: SimilarPerfume[];
       };
     } catch {
       return null;
@@ -189,9 +254,9 @@ export default function ResultScreen() {
   const displayImageUri = imageUri || collectionPerfume?.imageUri || undefined;
 
   const leaveResult = useCallback(() => {
-    if (fromCollection === '1') router.back();
+    if (fromCollection === '1' || isLookupMode) router.back();
     else router.replace('/');
-  }, [fromCollection]);
+  }, [fromCollection, isLookupMode]);
 
   const [result, setResult] = useState<PerfumeResult | null>(() =>
     collectionPerfume && !prefillInvalid ? perfumeToResult(collectionPerfume) : null,
@@ -211,6 +276,38 @@ export default function ResultScreen() {
   const [photoFullscreen, setPhotoFullscreen] = useState(false);
   const [savedToCollection, setSavedToCollection] = useState(() => fromCollection === '1');
   const [saving, setSaving] = useState(false);
+  const [similarListings, setSimilarListings] = useState<SimilarPerfume[]>(() => {
+    if (!collectionPerfume?.cachedSimilarListings) return [];
+    return collectionPerfume.cachedSimilarListings;
+  });
+  const [similarLoading, setSimilarLoading] = useState(false);
+
+  useEffect(() => {
+    if (!result) return;
+    const cachedFromCollection = collectionPerfume?.cachedSimilarListings || [];
+    if (fromCollection === '1' && cachedFromCollection.length > 0) {
+      setSimilarListings(cachedFromCollection);
+      setSimilarLoading(false);
+      return;
+    }
+    setSimilarLoading(true);
+    getSimilarListings(result.name, result.brand).then((listings) => {
+      setSimilarListings(listings);
+      setSimilarLoading(false);
+    }).catch(() => setSimilarLoading(false));
+  }, [result?.name, result?.brand, fromCollection, collectionPerfume?.cachedSimilarListings]);
+
+  const openAllSimilar = useCallback(() => {
+    if (!result) return;
+    router.push({
+      pathname: '/similar',
+      params: { name: result.name, brand: result.brand },
+    });
+  }, [result]);
+  const [selectedSize, setSelectedSize] = useState(() => {
+    const sizes = collectionPerfume ? (collectionPerfume as unknown as PerfumeResult).sizesPricing : undefined;
+    return sizes && sizes.length > 1 ? 1 : 0;
+  });
   const insets = useSafeAreaInsets();
 
   const cameraCardTop = insets.top + 48;
@@ -235,8 +332,63 @@ export default function ResultScreen() {
   const spinnerRotation = useSharedValue(0);
   const shineRotation = useSharedValue(0);
   const fullscreenTranslateY = useSharedValue(0);
+  const scrollY = useSharedValue(0);
 
   const onTransitionDone = useCallback(() => setShowResult(true), []);
+
+  const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    scrollY.value = event.nativeEvent.contentOffset.y;
+  }, []);
+
+  const backButtonBgStyle = useAnimatedStyle(() => {
+    const threshold = RESULT_HERO_ZONE_HEIGHT - 60;
+    const p = interpolate(
+      scrollY.value,
+      [threshold - 30, threshold],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    const r = Math.round(0 + p * 240);
+    const g = Math.round(0 + p * 232);
+    const b = Math.round(0 + p * 218);
+    const a = 0.5 + p * 0.5;
+    return {
+      backgroundColor: `rgba(${r}, ${g}, ${b}, ${a})`,
+    };
+  });
+
+  const backIconColorStyle = useAnimatedStyle(() => {
+    const threshold = RESULT_HERO_ZONE_HEIGHT - 60;
+    const progress = interpolate(
+      scrollY.value,
+      [threshold - 30, threshold],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return { opacity: 1 - progress };
+  });
+
+  const backIconDarkStyle = useAnimatedStyle(() => {
+    const threshold = RESULT_HERO_ZONE_HEIGHT - 60;
+    const progress = interpolate(
+      scrollY.value,
+      [threshold - 30, threshold],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return { opacity: progress };
+  });
+
+  const topShadowOpacityStyle = useAnimatedStyle(() => {
+    const threshold = RESULT_HERO_ZONE_HEIGHT - 60;
+    const opacity = interpolate(
+      scrollY.value,
+      [threshold - 30, threshold],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+    return { opacity };
+  });
 
   const openPhotoFullscreen = useCallback(() => {
     fullscreenTranslateY.value = 0;
@@ -386,6 +538,7 @@ export default function ResultScreen() {
 
   const showSuccess = useCallback((perfume: PerfumeResult) => {
     setResult(perfume);
+    setSelectedSize(perfume.sizesPricing && perfume.sizesPricing.length > 1 ? 1 : 0);
     setLoading(false);
     setCurrentStep(STEPS.length);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -425,14 +578,34 @@ export default function ResultScreen() {
     }
   }, [imageUri, showError, startStepAnimation]);
 
+  const doLookup = useCallback(async () => {
+    if (!lookupName) return;
+    setError(null);
+    setLoading(true);
+    setCurrentStep(0);
+    apiResult.current = null;
+    startStepAnimation();
+
+    try {
+      const perfume = await lookupPerfume(lookupName, lookupBrand || '');
+      apiResult.current = { perfume };
+    } catch (err: any) {
+      showError(err.message);
+    }
+  }, [lookupName, lookupBrand, showError, startStepAnimation]);
+
   useEffect(() => {
     if (collectionPerfume) return;
+    if (isLookupMode) {
+      doLookup();
+      return () => { if (stepInterval.current) clearInterval(stepInterval.current); };
+    }
     if (!imageUri) return;
     identify();
     return () => {
       if (stepInterval.current) clearInterval(stepInterval.current);
     };
-  }, [imageUri, collectionPerfume, identify]);
+  }, [imageUri, collectionPerfume, identify, isLookupMode, doLookup]);
 
   useEffect(() => {
     if (collectionPerfume) return;
@@ -464,10 +637,10 @@ export default function ResultScreen() {
     setSaving(true);
     try {
       const uploaded = await uploadImage(displayImageUri);
-      await addToCollection(result, { imageKey: uploaded.key });
+      await addToCollection(result, { imageKey: uploaded.key, similarListings });
     } catch {
       try {
-        await addToCollection(result, { imageUri: displayImageUri });
+        await addToCollection(result, { imageUri: displayImageUri, similarListings });
       } catch {}
     }
     setSavedToCollection(true);
@@ -555,22 +728,6 @@ export default function ResultScreen() {
     ],
   }));
 
-  const renderStars = (rating: number) => {
-    const stars = [];
-    const fullStars = Math.floor(rating);
-    const hasHalf = rating % 1 >= 0.5;
-    for (let i = 0; i < 5; i++) {
-      if (i < fullStars) {
-        stars.push(<Ionicons key={i} name="star" size={18} color={Colors.gold} />);
-      } else if (i === fullStars && hasHalf) {
-        stars.push(<Ionicons key={i} name="star-half" size={18} color={Colors.gold} />);
-      } else {
-        stars.push(<Ionicons key={i} name="star-outline" size={18} color={Colors.textMuted} />);
-      }
-    }
-    return stars;
-  };
-
   if (error) {
     return (
       <LinearGradient colors={[Colors.background, Colors.surface]} style={{ flex: 1 }}>
@@ -603,6 +760,8 @@ export default function ResultScreen() {
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
         >
           {/* Framed hero image */}
           <View style={styles.resultHeroWrap}>
@@ -627,7 +786,11 @@ export default function ResultScreen() {
                     >
                       <View style={styles.resultPhotoClip}>
                         {displayImageUri ? (
-                          <Image source={{ uri: displayImageUri }} style={styles.resultFrameImage} />
+                          <Image
+                            source={{ uri: displayImageUri }}
+                            style={styles.resultFrameImage}
+                            fadeDuration={200}
+                          />
                         ) : (
                           <View style={styles.resultFramePlaceholder}>
                             <Ionicons name="flask-outline" size={48} color={Colors.primary} />
@@ -640,61 +803,107 @@ export default function ResultScreen() {
               </View>
             </TouchableOpacity>
             <LinearGradient
+              colors={[Colors.surface, 'transparent']}
+              style={styles.resultHeroFadeTop}
+              pointerEvents="none"
+            />
+            <LinearGradient
               colors={['transparent', Colors.background]}
               style={styles.resultHeroFade}
               pointerEvents="none"
             />
-            <LinearGradient
-              colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.25)', 'transparent']}
-              locations={[0, 0.55, 1]}
-              style={[styles.topShadow, { height: insets.top + 52 }]}
-              pointerEvents="none"
-            />
-            <View style={[styles.resultBackRow, { paddingTop: insets.top + Spacing.sm }]}>
-              <TouchableOpacity
-                style={styles.heroBackButton}
-                onPress={leaveResult}
-              >
-                <Ionicons name="arrow-back" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Main Info */}
           <View style={styles.mainInfo}>
-            <Text style={styles.brand}>{result.brand}</Text>
             <Text style={styles.name}>{result.name}</Text>
 
-            {/* Price range badge */}
-            {result.priceRange && (
-              <View style={styles.priceBadge}>
+            {/* Price card */}
+            {(result.sizesPricing?.length || result.priceRange) && (
+              <View style={styles.priceCard}>
                 <LinearGradient
-                  colors={['#c8943c', '#d4a44a', '#c8943c']}
+                  colors={['#f5ead4', '#ece0c8', '#e3d5b8']}
                   start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.priceBadgeGradient}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.priceCardInner}
                 >
-                  <Ionicons name="pricetag" size={14} color="#fff" />
-                  <Text style={styles.priceBadgeText}>{result.priceRange}</Text>
+                  {result.sizesPricing && result.sizesPricing.length > 0 ? (
+                    <>
+                      <View style={styles.sizeTabs}>
+                        {result.sizesPricing.map((sp, i) => (
+                          <TouchableOpacity
+                            key={sp.size}
+                            style={[
+                              styles.sizeTab,
+                              selectedSize === i && styles.sizeTabActive,
+                            ]}
+                            onPress={() => setSelectedSize(i)}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.sizeTabText,
+                                selectedSize === i && styles.sizeTabTextActive,
+                              ]}
+                            >
+                              {sp.size}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <Text style={styles.priceCardAmount}>
+                        {result.sizesPricing[selectedSize]?.price ?? result.priceRange}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={styles.priceCardAmount}>
+                      {result.priceRange}
+                    </Text>
+                  )}
+                  <View style={styles.priceCardDivider} />
+                  <Text style={styles.priceCardGrading}>
+                    Grading: <Text style={styles.priceCardGradingValue}>
+                      {result.rating >= 4.5 ? 'Excellent' : result.rating >= 3.5 ? 'Very Good' : result.rating >= 2.5 ? 'Good' : 'Fair'}
+                    </Text>
+                  </Text>
                 </LinearGradient>
               </View>
             )}
+          </View>
 
-            <View style={styles.ratingRow}>
-              <View style={styles.stars}>{renderStars(result.rating)}</View>
-              <Text style={styles.ratingText}>{result.rating}/5</Text>
-            </View>
-            <View style={styles.tagRow}>
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{result.fragranceFamily}</Text>
-              </View>
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{result.gender}</Text>
-              </View>
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{result.concentration}</Text>
-              </View>
-            </View>
+          <View style={styles.similarSection}>
+            <TouchableOpacity
+              style={styles.similarHeader}
+              activeOpacity={0.7}
+              onPress={openAllSimilar}
+            >
+              <Text style={styles.similarTitle}>Similar Perfumes</Text>
+              <Text style={styles.similarChevron}>{'>'}</Text>
+            </TouchableOpacity>
+            <View style={styles.similarDivider} />
+            {similarLoading ? (
+              <ActivityIndicator size="small" color={Colors.text} style={{ marginVertical: 20 }} />
+            ) : similarListings.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.similarScroll}
+              >
+                {similarListings.slice(0, 5).map((p, i) => (
+                  <SimilarCardSmall key={i} perfume={p} />
+                ))}
+                {similarListings.length > 5 && (
+                  <TouchableOpacity
+                    style={styles.viewAllCard}
+                    activeOpacity={0.7}
+                    onPress={openAllSimilar}
+                  >
+                    <Ionicons name="arrow-forward-circle-outline" size={32} color={Colors.primary} />
+                    <Text style={styles.viewAllText}>View All</Text>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+            ) : null}
           </View>
 
           <View style={styles.section}>
@@ -758,69 +967,32 @@ export default function ResultScreen() {
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Similar Perfumes</Text>
-            <Text style={styles.sectionSubtitle}>Tap to shop online</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.similarScroll}
-            >
-              {normalizeSimilarPerfumes(result.similarPerfumes).map((p, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.similarCard}
-                  activeOpacity={0.85}
-                  onPress={() => WebBrowser.openBrowserAsync(
-                    buildShoppingUrl(p.name, p.brand, 'google')
-                  )}
-                >
-                  <LinearGradient
-                    colors={[Colors.surfaceLight, Colors.surface]}
-                    style={styles.similarCardGradient}
-                  >
-                    <View style={styles.similarImageWrap}>
-                      <LinearGradient
-                        colors={['#c8943c22', '#d4a44a11']}
-                        style={styles.similarImagePlaceholder}
-                      >
-                        <Text style={styles.similarInitial}>
-                          {(p.brand || p.name).charAt(0).toUpperCase()}
-                        </Text>
-                        <Ionicons name="flask-outline" size={28} color={Colors.primary} style={{ marginTop: 4 }} />
-                      </LinearGradient>
-                    </View>
-                    <Text style={styles.similarCardBrand} numberOfLines={1}>{p.brand}</Text>
-                    <Text style={styles.similarCardName} numberOfLines={2}>{p.name}</Text>
-                    {p.estimatedPrice ? (
-                      <Text style={styles.similarCardPrice}>{p.estimatedPrice}</Text>
-                    ) : null}
-                    <View style={styles.shopRow}>
-                      <TouchableOpacity
-                        style={styles.shopButton}
-                        onPress={() => WebBrowser.openBrowserAsync(
-                          buildShoppingUrl(p.name, p.brand, 'amazon')
-                        )}
-                      >
-                        <Text style={styles.shopButtonText}>Amazon</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.shopButton}
-                        onPress={() => WebBrowser.openBrowserAsync(
-                          buildShoppingUrl(p.name, p.brand, 'ebay')
-                        )}
-                      >
-                        <Text style={styles.shopButtonText}>eBay</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
           <View style={{ height: 100 }} />
         </ScrollView>
+
+        {/* Sticky back button */}
+        <Animated.View
+          style={[styles.topShadow, { height: insets.top + 52 }, topShadowOpacityStyle]}
+          pointerEvents="none"
+        >
+          <LinearGradient
+            colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.25)', 'transparent']}
+            locations={[0, 0.55, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        <View style={[styles.resultBackRow, { paddingTop: insets.top + Spacing.sm }]}>
+          <TouchableOpacity onPress={leaveResult} activeOpacity={0.7}>
+            <Animated.View style={[styles.heroBackButton, backButtonBgStyle]}>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.heroBackIconWrap, backIconColorStyle]}>
+                <Ionicons name="arrow-back" size={24} color="#fff" />
+              </Animated.View>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.heroBackIconWrap, backIconDarkStyle]}>
+                <Ionicons name="arrow-back" size={24} color="#2a1f0e" />
+              </Animated.View>
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
 
         {/* Sticky footer bar */}
         <View style={[styles.footerBar, { paddingBottom: insets.bottom || Spacing.md }]}>
@@ -931,6 +1103,7 @@ export default function ResultScreen() {
             </View>
           </GestureHandlerRootView>
         </Modal>
+
       </View>
     );
   }
@@ -1310,6 +1483,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.surface,
   },
+  resultHeroFadeTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+  },
   resultHeroFade: {
     position: 'absolute',
     bottom: 0,
@@ -1336,7 +1516,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    overflow: 'hidden',
+  },
+  heroBackIconWrap: {
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1357,21 +1539,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.text,
     marginTop: Spacing.xs,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Spacing.md,
-    gap: Spacing.sm,
-  },
-  stars: {
-    flexDirection: 'row',
-    gap: 2,
-  },
-  ratingText: {
-    fontSize: FontSizes.md,
-    fontWeight: '600',
-    color: Colors.gold,
   },
   tagRow: {
     flexDirection: 'row',
@@ -1397,7 +1564,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: FontSizes.xl,
     fontWeight: '700',
-    color: Colors.text,
+    color: Colors.textSecondary,
     marginBottom: Spacing.md,
   },
   description: {
@@ -1433,25 +1600,75 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: Spacing.sm,
   },
-  priceBadge: {
-    marginTop: Spacing.md,
-    alignSelf: 'flex-start',
+  priceCard: {
+    marginTop: Spacing.lg,
+    alignSelf: 'center',
+    width: '85%',
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+    borderColor: '#c8943c60',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+      },
+      android: { elevation: 6 },
+    }),
   },
-  priceBadgeGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  priceCardInner: {
+    borderRadius: BorderRadius.md - 2,
+    paddingVertical: Spacing.lg,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    gap: Spacing.sm,
-    borderWidth: 1,
-    borderColor: '#c8943c40',
+    alignItems: 'center',
   },
-  priceBadgeText: {
-    fontSize: FontSizes.lg,
+  sizeTabs: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: Spacing.md,
+  },
+  sizeTab: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    borderColor: '#c8943c50',
+    backgroundColor: 'transparent',
+  },
+  sizeTabActive: {
+    backgroundColor: '#2a1f0e',
+    borderColor: '#2a1f0e',
+  },
+  sizeTabText: {
+    fontSize: FontSizes.sm,
     fontWeight: '700',
-    color: '#fff',
+    color: '#5a4a32',
+  },
+  sizeTabTextActive: {
+    color: '#f5ead4',
+  },
+  priceCardAmount: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#2a1f0e',
     letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  priceCardDivider: {
+    width: '60%',
+    height: 1,
+    backgroundColor: '#c8943c50',
+    marginVertical: Spacing.sm + 2,
+  },
+  priceCardGrading: {
+    fontSize: FontSizes.md,
+    color: '#5a4a32',
+    fontWeight: '500',
+  },
+  priceCardGradingValue: {
+    fontWeight: '800',
+    color: '#2a1f0e',
   },
   sectionSubtitle: {
     fontSize: FontSizes.sm,
@@ -1459,82 +1676,101 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     marginTop: -Spacing.sm,
   },
+  similarSection: {
+    marginTop: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    paddingLeft: Spacing.lg,
+  },
+  similarHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: Spacing.sm,
+    paddingRight: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  similarTitle: {
+    fontSize: FontSizes.xl + 2,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  similarChevron: {
+    fontSize: FontSizes.xl,
+    fontWeight: '400',
+    color: Colors.textMuted,
+  },
+  similarDivider: {
+    height: 1,
+    backgroundColor: 'rgba(200,148,60,0.2)',
+    marginRight: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
   similarScroll: {
     paddingRight: Spacing.lg,
     gap: Spacing.md,
   },
   similarCard: {
-    width: 170,
-    borderRadius: BorderRadius.lg,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.border + '60',
-  },
-  similarCardGradient: {
-    padding: Spacing.md,
-    alignItems: 'center',
+    width: 140,
   },
   similarImageWrap: {
-    width: 100,
-    height: 100,
+    width: 140,
+    height: 150,
     borderRadius: BorderRadius.md,
     overflow: 'hidden',
+    backgroundColor: '#e8dece',
     marginBottom: Spacing.sm,
   },
-  similarImagePlaceholder: {
+  similarCardImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  similarImageFallback: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: '#c8943c20',
   },
-  similarInitial: {
-    fontSize: 28,
+  retailerBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#ab7f45',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  retailerBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  similarPrice: {
+    fontSize: FontSizes.md,
     fontWeight: '800',
-    color: Colors.primary,
-    opacity: 0.7,
-  },
-  similarCardBrand: {
-    fontSize: FontSizes.xs,
-    fontWeight: '600',
-    color: Colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  similarCardName: {
-    fontSize: FontSizes.sm,
-    fontWeight: '600',
     color: Colors.text,
-    textAlign: 'center',
-    marginTop: 2,
-    minHeight: 36,
   },
-  similarCardPrice: {
+  similarPriceCheck: {
+    fontSize: FontSizes.md,
+    fontWeight: '700',
+    fontStyle: 'italic',
+    color: Colors.textSecondary,
+  },
+  similarName: {
+    fontSize: FontSizes.xs,
+    color: Colors.text,
+    fontWeight: '500',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  viewAllCard: {
+    width: 90,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  viewAllText: {
     fontSize: FontSizes.sm,
     fontWeight: '700',
-    color: Colors.gold,
-    marginTop: Spacing.xs,
-  },
-  shopRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  shopButton: {
-    flex: 1,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.border + '80',
-    alignItems: 'center',
-  },
-  shopButtonText: {
-    fontSize: FontSizes.xs,
-    fontWeight: '600',
-    color: Colors.textSecondary,
+    color: Colors.primary,
   },
   fullscreenGestureRoot: {
     flex: 1,

@@ -6,6 +6,22 @@ export interface SimilarPerfume {
   name: string;
   brand: string;
   estimatedPrice: string;
+  retailer?: string;
+  imageUrl?: string | null;
+  productUrl?: string | null;
+  condition?: string | null;
+}
+
+export async function scrapeProductImage(name: string, brand: string): Promise<string | null> {
+  try {
+    const q = `${brand} ${name}`.trim();
+    const res = await fetch(`${API_URL}/scrape-image?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return null;
+    const data = await res.json() as { imageUrl: string | null };
+    return data.imageUrl || null;
+  } catch {
+    return null;
+  }
 }
 
 export interface PerfumeResult {
@@ -22,24 +38,37 @@ export interface PerfumeResult {
   baseNotes: string[];
   description: string;
   priceRange: string;
+  sizesPricing?: { size: string; price: string }[];
   rating: number;
   longevity: string;
   sillage: string;
   occasions: string[];
   seasons: string[];
   similarPerfumes: SimilarPerfume[] | string[];
+  cachedSimilarListings?: SimilarPerfume[];
 }
 
-export function buildShoppingUrl(perfumeName: string, brand: string, retailer: 'amazon' | 'ebay' | 'google'): string {
+export function buildShoppingUrl(perfumeName: string, brand: string, retailer?: string): string {
   const query = encodeURIComponent(`${brand} ${perfumeName} perfume`);
-  switch (retailer) {
-    case 'amazon':
-      return `https://www.amazon.com/s?k=${query}`;
-    case 'ebay':
-      return `https://www.ebay.com/sch/i.html?_nkw=${query}`;
-    case 'google':
-      return `https://www.google.com/search?tbm=shop&q=${query}`;
-  }
+  const key = (retailer || '').toLowerCase().replace(/[^a-z]/g, '');
+
+  if (key.includes('amazon')) return `https://www.amazon.com/s?k=${query}`;
+  if (key.includes('ebay')) return `https://www.ebay.com/sch/i.html?_nkw=${query}`;
+  if (key.includes('sephora')) return `https://www.sephora.com/search?keyword=${query}`;
+  if (key.includes('nordstrom')) return `https://www.nordstrom.com/sr?keyword=${query}`;
+  if (key.includes('ulta')) return `https://www.ulta.com/ulta/a/_/Ntt-${query}`;
+  if (key.includes('walmart')) return `https://www.walmart.com/search?q=${query}`;
+  if (key.includes('fragrancenet')) return `https://www.fragrancenet.com/search?q=${query}`;
+  if (key.includes('bloomingdale')) return `https://www.bloomingdales.com/shop/search?keyword=${query}`;
+  if (key.includes('macy') || key.includes('macys')) return `https://www.macys.com/shop/search?keyword=${query}`;
+  if (key.includes('neimanmarcus') || key.includes('neiman')) return `https://www.neimanmarcus.com/en-us/search?q=${query}`;
+  if (key.includes('luckyscent')) return `https://www.luckyscent.com/search.asp?keyword=${query}`;
+  if (key.includes('notino')) return `https://www.notino.com/search/?q=${query}`;
+  if (key.includes('douglas')) return `https://www.douglas.com/search?q=${query}`;
+  if (key.includes('harrods')) return `https://www.harrods.com/en-us/search?searchTerm=${query}`;
+  if (key.includes('theperfumeshop') || key.includes('perfumeshop')) return `https://www.theperfumeshop.com/search?q=${query}`;
+
+  return `https://www.google.com/search?tbm=shop&q=${query}`;
 }
 
 export function normalizeSimilarPerfumes(raw: SimilarPerfume[] | string[]): SimilarPerfume[] {
@@ -83,6 +112,7 @@ async function callIdentify(base64Image: string, signal: AbortSignal): Promise<P
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null) as any;
+    console.log('[PerfumeSnap] Error detail:', errorData?.detail || errorData?.snippet || 'none');
     throw new Error(errorData?.error || `Server error (${response.status})`);
   }
 
@@ -130,10 +160,42 @@ export async function identifyPerfume(base64Image: string): Promise<PerfumeResul
   }
 }
 
+export async function lookupPerfume(name: string, brand: string): Promise<PerfumeResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const res = await fetch(`${API_URL}/lookup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, brand }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => null) as any;
+      throw new Error(err?.error || `Lookup failed (${res.status})`);
+    }
+
+    return res.json();
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export interface CollectionItem {
   id: string;
   createdAt: number;
-  perfume: PerfumeResult & { imageUri?: string | null; imageKey?: string | null };
+  perfume: PerfumeResult & {
+    imageUri?: string | null;
+    imageKey?: string | null;
+    cachedSimilarListings?: SimilarPerfume[];
+  };
 }
 
 export interface CollectionPage {
@@ -182,7 +244,7 @@ export async function uploadImage(localUri: string): Promise<{ key: string; url:
 
 export async function addToCollection(
   perfume: PerfumeResult,
-  opts: { imageKey?: string; imageUri?: string } = {},
+  opts: { imageKey?: string; imageUri?: string; similarListings?: SimilarPerfume[] } = {},
 ): Promise<{ id: string; createdAt: number; imageUri: string | null }> {
   const userId = await getOrCreateUserId();
   const res = await fetch(`${API_URL}/collection`, {
@@ -192,6 +254,7 @@ export async function addToCollection(
       perfume,
       imageKey: opts.imageKey,
       imageUri: opts.imageUri,
+      similarListings: opts.similarListings,
     }),
   });
   if (!res.ok) throw new Error(`Failed to save to collection (${res.status})`);
@@ -205,4 +268,25 @@ export async function deleteFromCollection(itemId: string): Promise<void> {
     headers: { 'X-User-Id': userId },
   });
   if (!res.ok) throw new Error(`Failed to delete (${res.status})`);
+}
+
+export async function getSimilarListings(name: string, brand: string): Promise<SimilarPerfume[]> {
+  try {
+    const q = encodeURIComponent(`${brand} ${name} perfume`.trim());
+    const n = encodeURIComponent(name.trim());
+    const b = encodeURIComponent(brand.trim());
+    const url = `${API_URL}/similar?q=${q}&name=${n}&brand=${b}`;
+    console.log('[PerfumeSnap] Fetching similar:', url);
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn('[PerfumeSnap] /similar failed:', res.status);
+      return [];
+    }
+    const data = (await res.json()) as { results?: SimilarPerfume[] };
+    console.log('[PerfumeSnap] Similar results:', data.results?.length ?? 0);
+    return data.results || [];
+  } catch (err) {
+    console.error('[PerfumeSnap] getSimilarListings error:', err);
+    return [];
+  }
 }
