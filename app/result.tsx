@@ -213,7 +213,6 @@ function isLikelySampleOrDecant(item: SimilarPerfume): boolean {
 const DEVICE_LOCALE = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
 const localeParts = DEVICE_LOCALE.replace('_', '-').split('-');
 const DEVICE_REGION = (localeParts[1] || 'US').toUpperCase();
-const DEFAULT_UNIT_PREF: 'ml' | 'oz' = ['US', 'LR', 'MM'].includes(DEVICE_REGION) ? 'oz' : 'ml';
 const REGION_TO_CURRENCY: Record<string, string> = {
   US: 'USD', GB: 'GBP',
   GR: 'EUR', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', NL: 'EUR', IE: 'EUR', PT: 'EUR', CY: 'EUR',
@@ -238,25 +237,6 @@ function formatMoney(value: number, currencyCode: string): string {
   } catch {
     return `$${value.toFixed(2)}`;
   }
-}
-
-function parseSizeToMl(raw: string): number | null {
-  const text = raw.toLowerCase();
-  const ml = text.match(/(\d+(?:\.\d+)?)\s*ml\b/);
-  if (ml) return Number(ml[1]);
-  const oz = text.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz\b/);
-  if (oz) {
-    const value = Number(oz[1]);
-    return Number.isFinite(value) ? value * 29.5735 : null;
-  }
-  return null;
-}
-
-function formatSize(raw: string, unitPref: 'ml' | 'oz'): string {
-  const ml = parseSizeToMl(raw);
-  if (!ml || !Number.isFinite(ml)) return raw;
-  if (unitPref === 'oz') return `${(ml / 29.5735).toFixed(1)} oz`;
-  return `${Math.round(ml)} ml`;
 }
 
 function formatPriceRange(raw: string | undefined, currencyCode: string): string {
@@ -370,8 +350,7 @@ export default function ResultScreen() {
     return collectionPerfume.cachedSimilarListings;
   });
   const [similarLoading, setSimilarLoading] = useState(false);
-  const [selectedSize, setSelectedSize] = useState(0);
-  const [unitPref, setUnitPref] = useState<'ml' | 'oz'>(DEFAULT_UNIT_PREF);
+  const [similarResolvedOnProcess, setSimilarResolvedOnProcess] = useState(false);
 
   useEffect(() => {
     if (!result) return;
@@ -381,12 +360,16 @@ export default function ResultScreen() {
       setSimilarLoading(false);
       return;
     }
+    if (similarResolvedOnProcess) {
+      setSimilarLoading(false);
+      return;
+    }
     setSimilarLoading(true);
     getSimilarListings(result.name, result.brand).then((listings) => {
       setSimilarListings(listings);
       setSimilarLoading(false);
     }).catch(() => setSimilarLoading(false));
-  }, [result?.name, result?.brand, fromCollection, collectionPerfume?.cachedSimilarListings]);
+  }, [result?.name, result?.brand, fromCollection, collectionPerfume?.cachedSimilarListings, similarResolvedOnProcess]);
 
   const openAllSimilar = useCallback(() => {
     if (!result) return;
@@ -436,11 +419,11 @@ export default function ResultScreen() {
   const finalX = (SCREEN_WIDTH - frameOuterW) / 2;
   const finalY = SCREEN_HEIGHT * 0.18;
 
-  const heroW = SCREEN_WIDTH * 0.6;
-  const heroH = heroW * 1.3;
-  const heroAreaH = SCREEN_WIDTH * 0.9;
-  const heroX = (SCREEN_WIDTH - heroW) / 2;
-  const heroY = (heroAreaH - heroH) / 2;
+  // Final framed hero position in result screen (matches styles.resultHeroWrap/resultHeroFrameOuter)
+  const heroFrameW = RESULT_DETAIL_FRAME_W + 8; // + outer wrapper padding (4 left + 4 right)
+  const heroFrameH = RESULT_DETAIL_FRAME_H + 8;
+  const heroX = (SCREEN_WIDTH - heroFrameW) / 2;
+  const heroY = RESULT_HERO_ZONE_HEIGHT * 0.1;
 
   const progress = useSharedValue(0);
   const bgOpacity = useSharedValue(0);
@@ -449,12 +432,22 @@ export default function ResultScreen() {
   const stepsTranslateY = useSharedValue(40);
   const stepsOpacity = useSharedValue(0);
   const transitionProgress = useSharedValue(0);
+  const resultScreenEnter = useSharedValue(0);
   const spinnerRotation = useSharedValue(0);
   const shineRotation = useSharedValue(0);
   const fullscreenTranslateY = useSharedValue(0);
   const scrollY = useSharedValue(0);
 
   const onTransitionDone = useCallback(() => setShowResult(true), []);
+
+  useEffect(() => {
+    if (!showResult) return;
+    resultScreenEnter.value = 0;
+    resultScreenEnter.value = withTiming(1, {
+      duration: 460,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [showResult]);
 
   const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
     scrollY.value = event.nativeEvent.contentOffset.y;
@@ -623,7 +616,12 @@ export default function ResultScreen() {
     );
   }, [collectionPerfume]);
 
-  const apiResult = useRef<{ perfume?: PerfumeResult; error?: string } | null>(null);
+  const apiResult = useRef<{
+    perfume?: PerfumeResult;
+    similarListings?: SimilarPerfume[];
+    similarResolved?: boolean;
+    error?: string;
+  } | null>(null);
   const stepInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const readAsBase64 = async (uri: string): Promise<string> => {
@@ -656,9 +654,11 @@ export default function ResultScreen() {
     setLoading(false);
   }, []);
 
-  const showSuccess = useCallback((perfume: PerfumeResult) => {
+  const showSuccess = useCallback((perfume: PerfumeResult, preloadedSimilar?: SimilarPerfume[], similarResolved = false) => {
     setResult(perfume);
-    setSelectedSize(0);
+    if (preloadedSimilar) setSimilarListings(preloadedSimilar);
+    setSimilarResolvedOnProcess(similarResolved);
+    setSimilarLoading(false);
     setLoading(false);
     setCurrentStep(STEPS.length);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -686,13 +686,19 @@ export default function ResultScreen() {
     setError(null);
     setLoading(true);
     setCurrentStep(0);
+    setSimilarLoading(true);
+    setSimilarResolvedOnProcess(false);
     apiResult.current = null;
     startStepAnimation();
 
     try {
       const base64 = await readAsBase64(imageUri);
       const perfume = await identifyPerfume(base64);
-      apiResult.current = { perfume };
+      let listings: SimilarPerfume[] = [];
+      try {
+        listings = await getSimilarListings(perfume.name, perfume.brand);
+      } catch {}
+      apiResult.current = { perfume, similarListings: listings, similarResolved: true };
     } catch (err: any) {
       showError(err.message);
     }
@@ -703,12 +709,18 @@ export default function ResultScreen() {
     setError(null);
     setLoading(true);
     setCurrentStep(0);
+    setSimilarLoading(true);
+    setSimilarResolvedOnProcess(false);
     apiResult.current = null;
     startStepAnimation();
 
     try {
       const perfume = await lookupPerfume(lookupName, lookupBrand || '');
-      apiResult.current = { perfume };
+      let listings: SimilarPerfume[] = [];
+      try {
+        listings = await getSimilarListings(perfume.name, perfume.brand);
+      } catch {}
+      apiResult.current = { perfume, similarListings: listings, similarResolved: true };
     } catch (err: any) {
       showError(err.message);
     }
@@ -739,12 +751,20 @@ export default function ResultScreen() {
           if (apiResult.current) {
             clearInterval(poll);
             if (apiResult.current.error) showError(apiResult.current.error);
-            else if (apiResult.current.perfume) showSuccess(apiResult.current.perfume);
+            else if (apiResult.current.perfume) showSuccess(
+              apiResult.current.perfume,
+              apiResult.current.similarListings || [],
+              Boolean(apiResult.current.similarResolved),
+            );
           }
         }, 300);
       } else {
         if (res.error) showError(res.error);
-        else if (res.perfume) showSuccess(res.perfume);
+        else if (res.perfume) showSuccess(
+          res.perfume,
+          res.similarListings || [],
+          Boolean(res.similarResolved),
+        );
       }
     }, 1500);
 
@@ -792,10 +812,10 @@ export default function ResultScreen() {
       0,
     ]);
 
-    const scaleX = interpolate(t, [0, 1], [baseScaleX, heroW / frameOuterW]);
-    const scaleY = interpolate(t, [0, 1], [baseScaleY, heroH / frameOuterH]);
-    const tx = interpolate(t, [0, 1], [baseTX, heroX + heroW / 2 - (finalX + frameOuterW / 2)]);
-    const ty = interpolate(t, [0, 1], [baseTY, heroY + heroH / 2 - (finalY + frameOuterH / 2)]);
+    const scaleX = interpolate(t, [0, 1], [baseScaleX, heroFrameW / frameOuterW]);
+    const scaleY = interpolate(t, [0, 1], [baseScaleY, heroFrameH / frameOuterH]);
+    const tx = interpolate(t, [0, 1], [baseTX, heroX + heroFrameW / 2 - (finalX + frameOuterW / 2)]);
+    const ty = interpolate(t, [0, 1], [baseTY, heroY + heroFrameH / 2 - (finalY + frameOuterH / 2)]);
     const rotate = interpolate(t, [0, 1], [frameRotate.value, 0]);
 
     return {
@@ -844,6 +864,15 @@ export default function ResultScreen() {
     transform: [
       {
         translateY: interpolate(transitionProgress.value, [0.5, 1], [40, 0], 'clamp'),
+      },
+    ],
+  }));
+
+  const resultScreenAnimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(resultScreenEnter.value, [0, 1], [0, 1], 'clamp'),
+    transform: [
+      {
+        translateY: interpolate(resultScreenEnter.value, [0, 1], [60, 0], 'clamp'),
       },
     ],
   }));
@@ -934,8 +963,9 @@ export default function ResultScreen() {
             />
           </View>
 
-          {/* Main Info */}
-          <View style={styles.mainInfo}>
+          <Animated.View style={resultScreenAnimStyle}>
+            {/* Main Info */}
+            <View style={styles.mainInfo}>
             <Text style={styles.name}>{result.name}</Text>
 
             {/* Price card */}
@@ -952,41 +982,9 @@ export default function ResultScreen() {
                       {livePriceStats.display}
                     </Text>
                   ) : (
-                    <>
-                      {result.sizesPricing && result.sizesPricing.length > 0 ? (
-                        <>
-                          <View style={styles.sizeTabs}>
-                            {result.sizesPricing.map((sp, i) => (
-                              <TouchableOpacity
-                                key={`${sp.size}-${i}`}
-                                style={[
-                                  styles.sizeTab,
-                                  selectedSize === i && styles.sizeTabActive,
-                                ]}
-                                onPress={() => setSelectedSize(i)}
-                                activeOpacity={0.7}
-                              >
-                                <Text
-                                  style={[
-                                    styles.sizeTabText,
-                                    selectedSize === i && styles.sizeTabTextActive,
-                                  ]}
-                                >
-                                  {formatSize(sp.size, unitPref)}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                          <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                            {formatPriceRange(result.sizesPricing[selectedSize]?.price ?? result.priceRange, DEFAULT_CURRENCY)}
-                          </Text>
-                        </>
-                      ) : (
-                        <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                          {formatPriceRange(result.priceRange, DEFAULT_CURRENCY)}
-                        </Text>
-                      )}
-                    </>
+                    <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                      {formatPriceRange(result.priceRange, DEFAULT_CURRENCY)}
+                    </Text>
                   )}
                   <View style={styles.priceCardDivider} />
                   <Text style={styles.priceCardGrading}>
@@ -999,7 +997,7 @@ export default function ResultScreen() {
             )}
           </View>
 
-          <View style={styles.similarSection}>
+            <View style={styles.similarSection}>
             <TouchableOpacity
               style={styles.similarHeader}
               activeOpacity={0.7}
@@ -1034,12 +1032,12 @@ export default function ResultScreen() {
             ) : null}
           </View>
 
-          <View style={styles.section}>
+            <View style={styles.section}>
             <Text style={styles.sectionTitle}>About</Text>
             <Text style={styles.description}>{result.description}</Text>
           </View>
 
-          <View style={styles.section}>
+            <View style={styles.section}>
             <Text style={styles.sectionTitle}>Fragrance Notes</Text>
             <View style={styles.notesGroup}>
               <Text style={styles.notesLabel}>🌟 Top Notes</Text>
@@ -1067,7 +1065,7 @@ export default function ResultScreen() {
             </View>
           </View>
 
-          <View style={styles.section}>
+            <View style={styles.section}>
             <Text style={styles.sectionTitle}>Details</Text>
             <View style={styles.card}>
               <InfoRow icon="⏱️" label="Longevity" value={result.longevity} />
@@ -1077,7 +1075,7 @@ export default function ResultScreen() {
             </View>
           </View>
 
-          <View style={styles.section}>
+            <View style={styles.section}>
             <Text style={styles.sectionTitle}>Best For</Text>
             <View style={styles.card}>
               <Text style={styles.cardLabel}>Occasions</Text>
@@ -1095,7 +1093,8 @@ export default function ResultScreen() {
             </View>
           </View>
 
-          <View style={{ height: 100 }} />
+            <View style={{ height: 100 }} />
+          </Animated.View>
         </ScrollView>
 
         {/* Sticky back button */}
