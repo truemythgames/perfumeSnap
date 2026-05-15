@@ -35,12 +35,59 @@ const CHECKBOX_WIDTH = CHECKBOX_ICON + Math.round(Spacing.lg * 0.6);
 const PHOTO_WIDTH = 90;
 const PHOTO_HEIGHT = PHOTO_WIDTH * 1.3;
 
-function parsePriceValue(range: string | undefined): number {
-  if (!range) return 0;
-  const nums = range.match(/[\d]+(?:[.,]\d+)?/g);
-  if (!nums || nums.length === 0) return 0;
-  const values = nums.map((n) => parseFloat(n.replace(',', '.')));
-  return values.reduce((a, b) => a + b, 0) / values.length;
+function parseNumericPrice(raw?: string): number | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/,/g, '');
+  const match = cleaned.match(/\$?\s*(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function isLikelySampleOrDecant(name?: string, brand?: string): boolean {
+  const text = `${name || ''} ${brand || ''}`.toLowerCase();
+  if (/(decant|sample|vial|travel|mini|tester)/.test(text)) return true;
+
+  const mlMatch = text.match(/(\d+(?:\.\d+)?)\s*ml\b/);
+  if (mlMatch) {
+    const ml = Number(mlMatch[1]);
+    if (Number.isFinite(ml) && ml > 0 && ml <= 15) return true;
+  }
+  const ozMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz\b/);
+  if (ozMatch) {
+    const oz = Number(ozMatch[1]);
+    if (Number.isFinite(oz) && oz > 0 && oz <= 0.5) return true;
+  }
+  return false;
+}
+
+function computeLivePriceDisplay(item: CollectionItem): { display: string; midpoint: number } | null {
+  const listings = item.perfume.cachedSimilarListings || [];
+  const prices = listings
+    .filter((l) => !isLikelySampleOrDecant(l.name, l.brand))
+    .map((l) => parseNumericPrice(l.estimatedPrice))
+    .filter((v): v is number => v !== null)
+    .filter((v) => v >= 10)
+    .sort((a, b) => a - b);
+
+  if (prices.length === 0) return null;
+
+  let bounded = prices;
+  if (bounded.length >= 5) {
+    const from = Math.floor(bounded.length * 0.2);
+    const to = Math.ceil(bounded.length * 0.8);
+    bounded = bounded.slice(from, to);
+  }
+
+  const median = bounded[Math.floor(bounded.length / 2)];
+  const inBand = bounded.filter((v) => v >= median * 0.6 && v <= median * 1.8);
+  if (inBand.length >= 2) bounded = inBand;
+
+  const min = bounded[0];
+  const max = bounded[bounded.length - 1];
+  const midpoint = (min + max) / 2;
+  const display = min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`;
+  return { display, midpoint };
 }
 
 export interface CollectionTabHandle {
@@ -201,8 +248,11 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
   const stats = useMemo(() => {
     const brands = new Set(items.map((it) => it.perfume.brand).filter(Boolean));
-    const totalValue = items.reduce((sum, it) => sum + parsePriceValue(it.perfume.priceRange), 0);
-    return { count: items.length, brands: brands.size, totalValue: Math.round(totalValue) };
+    const midpoints = items
+      .map((it) => computeLivePriceDisplay(it)?.midpoint ?? null)
+      .filter((v): v is number => v !== null);
+    const totalValue = Math.round(midpoints.reduce((sum, v) => sum + v, 0));
+    return { count: items.length, brands: brands.size, totalValue };
   }, [items]);
 
   const scrollY = useSharedValue(-ICON_BAR_HEIGHT);
@@ -295,6 +345,9 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
 
   const openCollectionDetail = useCallback((item: CollectionItem) => {
+    if (item.perfume.imageUri) {
+      Image.prefetch(item.perfume.imageUri).catch(() => {});
+    }
     router.push({
       pathname: '/result',
       params: {
@@ -315,9 +368,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       );
     }
     const p = item.perfume;
-    const dateStr = new Date(item.createdAt).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric',
-    });
+    const livePrice = computeLivePriceDisplay(item);
     return (
       <TouchableOpacity
         style={styles.card}
@@ -365,10 +416,9 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{p.name}</Text>
           <Text style={styles.cardBrand} numberOfLines={1}>{p.brand}</Text>
-          {p.priceRange ? (
-            <Text style={styles.cardPrice}>{p.priceRange}</Text>
+          {livePrice ? (
+            <Text style={styles.cardPrice}>{livePrice.display}</Text>
           ) : null}
-          <Text style={styles.cardDate}>{dateStr}</Text>
         </View>
 
       </TouchableOpacity>

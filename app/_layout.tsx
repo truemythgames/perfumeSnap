@@ -21,6 +21,14 @@ export default function RootLayout() {
           name="result"
           options={{
             animation: 'slide_from_right',
+            animationDuration: 250,
+          }}
+        />
+        <Stack.Screen
+          name="similar"
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 250,
           }}
         />
       </Stack>

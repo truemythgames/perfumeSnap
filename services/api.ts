@@ -272,10 +272,17 @@ export async function deleteFromCollection(itemId: string): Promise<void> {
 
 export async function getSimilarListings(name: string, brand: string): Promise<SimilarPerfume[]> {
   try {
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
+    const localeParts = locale.replace('_', '-').split('-');
+    const language = (localeParts[0] || 'en').toLowerCase();
+    const country = (localeParts[1] || 'US').toLowerCase();
+
     const q = encodeURIComponent(`${brand} ${name} perfume`.trim());
     const n = encodeURIComponent(name.trim());
     const b = encodeURIComponent(brand.trim());
-    const url = `${API_URL}/similar?q=${q}&name=${n}&brand=${b}`;
+    const c = encodeURIComponent(country);
+    const hl = encodeURIComponent(language);
+    const url = `${API_URL}/similar?q=${q}&name=${n}&brand=${b}&country=${c}&hl=${hl}`;
     console.log('[PerfumeSnap] Fetching similar:', url);
     const res = await fetch(url);
     if (!res.ok) {

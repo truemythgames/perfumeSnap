@@ -184,6 +184,95 @@ function SimilarCardSmall({ perfume }: { perfume: SimilarPerfume }) {
   );
 }
 
+function parseNumericPrice(raw?: string): number | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/,/g, '');
+  const match = cleaned.match(/\$?\s*(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function isLikelySampleOrDecant(item: SimilarPerfume): boolean {
+  const text = `${item.name || ''} ${item.brand || ''}`.toLowerCase();
+  if (/(decant|sample|vial|travel|mini|tester)/.test(text)) return true;
+
+  const mlMatch = text.match(/(\d+(?:\.\d+)?)\s*ml\b/);
+  if (mlMatch) {
+    const ml = Number(mlMatch[1]);
+    if (Number.isFinite(ml) && ml > 0 && ml <= 15) return true;
+  }
+  const ozMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz\b/);
+  if (ozMatch) {
+    const oz = Number(ozMatch[1]);
+    if (Number.isFinite(oz) && oz > 0 && oz <= 0.5) return true;
+  }
+  return false;
+}
+
+const DEVICE_LOCALE = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
+const localeParts = DEVICE_LOCALE.replace('_', '-').split('-');
+const DEVICE_REGION = (localeParts[1] || 'US').toUpperCase();
+const DEFAULT_UNIT_PREF: 'ml' | 'oz' = ['US', 'LR', 'MM'].includes(DEVICE_REGION) ? 'oz' : 'ml';
+const REGION_TO_CURRENCY: Record<string, string> = {
+  US: 'USD', GB: 'GBP',
+  GR: 'EUR', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', NL: 'EUR', IE: 'EUR', PT: 'EUR', CY: 'EUR',
+  AU: 'AUD', CA: 'CAD', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK',
+  JP: 'JPY', KR: 'KRW', CN: 'CNY', IN: 'INR', AE: 'AED', SA: 'SAR', TR: 'TRY',
+};
+const DEFAULT_CURRENCY = REGION_TO_CURRENCY[DEVICE_REGION] || 'USD';
+
+function formatMoney(value: number, currencyCode: string): string {
+  try {
+    const formatted = new Intl.NumberFormat(DEVICE_LOCALE, {
+      style: 'currency',
+      currency: currencyCode,
+      currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: 2,
+    }).format(value);
+    // Normalize variants like "US$50.49" / "USD 50.49" to plain symbol form.
+    return formatted
+      .replace(/^USD\s*/i, '$')
+      .replace(/^US\$/i, '$')
+      .replace(/^([A-Z]{2})\$/i, '$');
+  } catch {
+    return `$${value.toFixed(2)}`;
+  }
+}
+
+function parseSizeToMl(raw: string): number | null {
+  const text = raw.toLowerCase();
+  const ml = text.match(/(\d+(?:\.\d+)?)\s*ml\b/);
+  if (ml) return Number(ml[1]);
+  const oz = text.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz\b/);
+  if (oz) {
+    const value = Number(oz[1]);
+    return Number.isFinite(value) ? value * 29.5735 : null;
+  }
+  return null;
+}
+
+function formatSize(raw: string, unitPref: 'ml' | 'oz'): string {
+  const ml = parseSizeToMl(raw);
+  if (!ml || !Number.isFinite(ml)) return raw;
+  if (unitPref === 'oz') return `${(ml / 29.5735).toFixed(1)} oz`;
+  return `${Math.round(ml)} ml`;
+}
+
+function formatPriceRange(raw: string | undefined, currencyCode: string): string {
+  if (!raw) return '';
+  const nums = raw.match(/[\d]+(?:[.,]\d+)?/g);
+  if (!nums || nums.length === 0) return raw;
+  const values = nums
+    .map((n) => Number(n.replace(',', '.')))
+    .filter((v) => Number.isFinite(v));
+  if (values.length === 0) return raw;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) return formatMoney(min, currencyCode);
+  return `${formatMoney(min, currencyCode)} - ${formatMoney(max, currencyCode)}`;
+}
+
 export default function ResultScreen() {
   const params = useLocalSearchParams<{
     imageUri?: string;
@@ -281,6 +370,8 @@ export default function ResultScreen() {
     return collectionPerfume.cachedSimilarListings;
   });
   const [similarLoading, setSimilarLoading] = useState(false);
+  const [selectedSize, setSelectedSize] = useState(0);
+  const [unitPref, setUnitPref] = useState<'ml' | 'oz'>(DEFAULT_UNIT_PREF);
 
   useEffect(() => {
     if (!result) return;
@@ -304,10 +395,39 @@ export default function ResultScreen() {
       params: { name: result.name, brand: result.brand },
     });
   }, [result]);
-  const [selectedSize, setSelectedSize] = useState(() => {
-    const sizes = collectionPerfume ? (collectionPerfume as unknown as PerfumeResult).sizesPricing : undefined;
-    return sizes && sizes.length > 1 ? 1 : 0;
-  });
+  const livePriceStats = useMemo(() => {
+    const priced = similarListings
+      .filter((item) => !isLikelySampleOrDecant(item))
+      .map((item) => ({
+        price: parseNumericPrice(item.estimatedPrice),
+        retailer: item.retailer || 'Retailer',
+      }))
+      .filter((x): x is { price: number; retailer: string } => x.price !== null)
+      .filter((x) => x.price >= 10);
+    if (priced.length === 0) return null;
+
+    let sorted = priced.map((p) => p.price).sort((a, b) => a - b);
+
+    // Trim extreme tails when we have enough offers.
+    if (sorted.length >= 5) {
+      const from = Math.floor(sorted.length * 0.2);
+      const to = Math.ceil(sorted.length * 0.8);
+      sorted = sorted.slice(from, to);
+    }
+
+    // Keep only prices in a reasonable band around median.
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const bounded = sorted.filter((v) => v >= median * 0.6 && v <= median * 1.8);
+    if (bounded.length >= 2) sorted = bounded;
+
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const display = min === max
+      ? formatMoney(min, DEFAULT_CURRENCY)
+      : `${formatMoney(min, DEFAULT_CURRENCY)} - ${formatMoney(max, DEFAULT_CURRENCY)}`;
+    return { display };
+  }, [similarListings]);
+
   const insets = useSafeAreaInsets();
 
   const cameraCardTop = insets.top + 48;
@@ -538,7 +658,7 @@ export default function ResultScreen() {
 
   const showSuccess = useCallback((perfume: PerfumeResult) => {
     setResult(perfume);
-    setSelectedSize(perfume.sizesPricing && perfume.sizesPricing.length > 1 ? 1 : 0);
+    setSelectedSize(0);
     setLoading(false);
     setCurrentStep(STEPS.length);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -819,7 +939,7 @@ export default function ResultScreen() {
             <Text style={styles.name}>{result.name}</Text>
 
             {/* Price card */}
-            {(result.sizesPricing?.length || result.priceRange) && (
+            {(livePriceStats || result.priceRange) && (
               <View style={styles.priceCard}>
                 <LinearGradient
                   colors={['#f5ead4', '#ece0c8', '#e3d5b8']}
@@ -827,38 +947,46 @@ export default function ResultScreen() {
                   end={{ x: 0, y: 1 }}
                   style={styles.priceCardInner}
                 >
-                  {result.sizesPricing && result.sizesPricing.length > 0 ? (
-                    <>
-                      <View style={styles.sizeTabs}>
-                        {result.sizesPricing.map((sp, i) => (
-                          <TouchableOpacity
-                            key={sp.size}
-                            style={[
-                              styles.sizeTab,
-                              selectedSize === i && styles.sizeTabActive,
-                            ]}
-                            onPress={() => setSelectedSize(i)}
-                            activeOpacity={0.7}
-                          >
-                            <Text
-                              style={[
-                                styles.sizeTabText,
-                                selectedSize === i && styles.sizeTabTextActive,
-                              ]}
-                            >
-                              {sp.size}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                      <Text style={styles.priceCardAmount}>
-                        {result.sizesPricing[selectedSize]?.price ?? result.priceRange}
-                      </Text>
-                    </>
-                  ) : (
-                    <Text style={styles.priceCardAmount}>
-                      {result.priceRange}
+                  {livePriceStats ? (
+                    <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                      {livePriceStats.display}
                     </Text>
+                  ) : (
+                    <>
+                      {result.sizesPricing && result.sizesPricing.length > 0 ? (
+                        <>
+                          <View style={styles.sizeTabs}>
+                            {result.sizesPricing.map((sp, i) => (
+                              <TouchableOpacity
+                                key={`${sp.size}-${i}`}
+                                style={[
+                                  styles.sizeTab,
+                                  selectedSize === i && styles.sizeTabActive,
+                                ]}
+                                onPress={() => setSelectedSize(i)}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[
+                                    styles.sizeTabText,
+                                    selectedSize === i && styles.sizeTabTextActive,
+                                  ]}
+                                >
+                                  {formatSize(sp.size, unitPref)}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                          <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                            {formatPriceRange(result.sizesPricing[selectedSize]?.price ?? result.priceRange, DEFAULT_CURRENCY)}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                          {formatPriceRange(result.priceRange, DEFAULT_CURRENCY)}
+                        </Text>
+                      )}
+                    </>
                   )}
                   <View style={styles.priceCardDivider} />
                   <Text style={styles.priceCardGrading}>

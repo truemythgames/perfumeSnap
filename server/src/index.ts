@@ -485,10 +485,11 @@ async function handleAddToCollection(request: Request, env: Env): Promise<Respon
       const b = typeof perfumeObj?.brand === 'string' ? perfumeObj.brand : '';
       const q = `${b} ${n} perfume`.trim().toLowerCase();
       if (q) {
-        const cacheKey = `v4:${q}`;
+        const cacheKeyV5Pattern = `v5:%:${q}`;
+        const cacheKeyV4 = `v4:${q}`;
         const cached = await env.DB.prepare(
-          'SELECT response_json FROM similar_cache WHERE query = ? ORDER BY created_at DESC LIMIT 1'
-        ).bind(cacheKey).first<{ response_json: string }>();
+          'SELECT response_json FROM similar_cache WHERE query = ? OR query LIKE ? ORDER BY created_at DESC LIMIT 1'
+        ).bind(cacheKeyV4, cacheKeyV5Pattern).first<{ response_json: string }>();
         if (cached?.response_json) {
           const parsed = JSON.parse(cached.response_json) as { results?: unknown };
           cachedSimilarListings = sanitizeListings(parsed.results);
@@ -571,8 +572,12 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   if (!q) {
     return jsonResponse({ error: 'Missing q parameter' }, 400);
   }
+  const countryParam = (url.searchParams.get('country') || 'us').toLowerCase();
+  const hlParam = (url.searchParams.get('hl') || 'en').toLowerCase();
+  const gl = /^[a-z]{2}$/.test(countryParam) ? countryParam : 'us';
+  const hl = /^[a-z]{2}$/.test(hlParam) ? hlParam : 'en';
 
-  const cacheKey = `v4:${q.toLowerCase().trim()}`;
+  const cacheKey = `v5:${gl}:${hl}:${q.toLowerCase().trim()}`;
   const noCache = url.searchParams.get('nocache') === '1';
 
   if (!noCache) {
@@ -599,7 +604,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   // Parallel calls: shopping (images+prices) + multiple organic (direct URLs)
   const [shoppingRes, ...organicResponses] = await Promise.all([
     fetch(`https://serpapi.com/search.json?${new URLSearchParams({
-      engine: 'google_shopping', q, api_key: serpApiKey, num: '40', gl: 'us', hl: 'en',
+      engine: 'google_shopping', q, api_key: serpApiKey, num: '40', gl, hl,
     })}`),
     ...organicQueries.map((oq) =>
       fetch(`https://serpapi.com/search.json?${new URLSearchParams({
@@ -607,8 +612,8 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
         q: oq,
         api_key: serpApiKey,
         num: '40',
-        gl: 'us',
-        hl: 'en',
+        gl,
+        hl,
       })}`),
     ),
   ]);
