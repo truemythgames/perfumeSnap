@@ -239,6 +239,41 @@ function formatMoney(value: number, currencyCode: string): string {
   }
 }
 
+function getCurrencySymbol(currencyCode: string): string {
+  try {
+    const parts = new Intl.NumberFormat(DEVICE_LOCALE, {
+      style: 'currency',
+      currency: currencyCode,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).formatToParts(0);
+    const symbol = parts.find((p) => p.type === 'currency')?.value;
+    if (symbol) return symbol
+      .replace(/^USD$/i, '$')
+      .replace(/^US\$/i, '$')
+      .replace(/^([A-Z]{2})\$/i, '$');
+  } catch {}
+  return '$';
+}
+
+function formatNumberValue(value: number): string {
+  try {
+    return new Intl.NumberFormat(DEVICE_LOCALE, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return value.toFixed(2);
+  }
+}
+
+function formatSingleCurrencyRange(min: number, max: number, currencyCode: string): string {
+  const symbol = getCurrencySymbol(currencyCode);
+  if (min === max) return `${symbol}${formatNumberValue(min)}`;
+  return `${symbol}${formatNumberValue(min)}-${formatNumberValue(max)}`;
+}
+
 function formatPriceRange(raw: string | undefined, currencyCode: string): string {
   if (!raw) return '';
   const nums = raw.match(/[\d]+(?:[.,]\d+)?/g);
@@ -249,8 +284,13 @@ function formatPriceRange(raw: string | undefined, currencyCode: string): string
   if (values.length === 0) return raw;
   const min = Math.min(...values);
   const max = Math.max(...values);
-  if (min === max) return formatMoney(min, currencyCode);
-  return `${formatMoney(min, currencyCode)} - ${formatMoney(max, currencyCode)}`;
+  return formatSingleCurrencyRange(min, max, currencyCode);
+}
+
+function splitCurrencyDisplay(display: string): { currency: string; amount: string } {
+  const m = display.trim().match(/^([^\d\s.,-]+)\s*(.+)$/);
+  if (!m) return { currency: '', amount: display };
+  return { currency: m[1], amount: m[2] };
 }
 
 export default function ResultScreen() {
@@ -378,6 +418,29 @@ export default function ResultScreen() {
       params: { name: result.name, brand: result.brand },
     });
   }, [result]);
+  const openPerfumeChat = useCallback(() => {
+    if (!result) return;
+    const perfumeForChat = {
+      name: result.name,
+      brand: result.brand,
+      description: result.description,
+      concentration: result.concentration,
+      topNotes: result.topNotes,
+      heartNotes: result.heartNotes,
+      baseNotes: result.baseNotes,
+      longevity: result.longevity,
+      sillage: result.sillage,
+      occasions: result.occasions,
+      seasons: result.seasons,
+      yearLaunched: result.yearLaunched,
+      fragranceFamily: result.fragranceFamily,
+      gender: result.gender,
+    };
+    router.push({
+      pathname: '/perfume-chat',
+      params: { perfume: JSON.stringify(perfumeForChat) },
+    });
+  }, [result]);
   const livePriceStats = useMemo(() => {
     const priced = similarListings
       .filter((item) => !isLikelySampleOrDecant(item))
@@ -405,10 +468,45 @@ export default function ResultScreen() {
 
     const min = sorted[0];
     const max = sorted[sorted.length - 1];
-    const display = min === max
-      ? formatMoney(min, DEFAULT_CURRENCY)
-      : `${formatMoney(min, DEFAULT_CURRENCY)} - ${formatMoney(max, DEFAULT_CURRENCY)}`;
+    const display = formatSingleCurrencyRange(min, max, DEFAULT_CURRENCY);
     return { display };
+  }, [similarListings]);
+  const rarityInsights = useMemo(() => {
+    const comparableListings = similarListings.filter((item) => !isLikelySampleOrDecant(item));
+    if (comparableListings.length === 0) return null;
+
+    const listingCount = comparableListings.length;
+    const retailers = new Set(
+      comparableListings
+        .map((item) => (item.retailer || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const retailerCount = retailers.size;
+
+    let score = 0;
+    if (listingCount <= 2) score = 0.9;
+    else if (listingCount <= 4) score = 0.78;
+    else if (listingCount <= 7) score = 0.64;
+    else if (listingCount <= 12) score = 0.5;
+    else if (listingCount <= 20) score = 0.34;
+    else score = 0.2;
+
+    if (retailerCount <= 2) score += 0.06;
+    else if (retailerCount >= 7) score -= 0.05;
+
+    const normalized = Math.max(0, Math.min(1, score));
+
+    let label = 'Very Common';
+    if (normalized >= 0.82) label = 'Extremely Rare';
+    else if (normalized >= 0.64) label = 'Rare';
+    else if (normalized >= 0.46) label = 'Uncommon';
+    else if (normalized >= 0.28) label = 'Common';
+
+    return {
+      label,
+      normalized,
+      listingCount,
+    };
   }, [similarListings]);
 
   const insets = useSafeAreaInsets();
@@ -903,6 +1001,16 @@ export default function ResultScreen() {
   }
 
   if (showResult && result) {
+    const displayedPrice = livePriceStats
+      ? livePriceStats.display
+      : formatPriceRange(result.priceRange, DEFAULT_CURRENCY);
+    const splitPrice = splitCurrencyDisplay(displayedPrice);
+    const perfumerValue = (result.perfumer || '').trim();
+    const shouldShowPerfumer = Boolean(
+      perfumerValue &&
+      !/^(unknown|n\/a|na|not known|unlisted)$/i.test(perfumerValue),
+    );
+
     return (
       <View style={styles.container}>
         <ScrollView
@@ -977,15 +1085,19 @@ export default function ResultScreen() {
                   end={{ x: 0, y: 1 }}
                   style={styles.priceCardInner}
                 >
-                  {livePriceStats ? (
-                    <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                      {livePriceStats.display}
+                  <View style={styles.priceCardAmountRow}>
+                    {splitPrice.currency ? (
+                      <Text style={styles.priceCardCurrency}>{splitPrice.currency}</Text>
+                    ) : null}
+                    <Text
+                      style={styles.priceCardAmount}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {splitPrice.amount}
                     </Text>
-                  ) : (
-                    <Text style={styles.priceCardAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                      {formatPriceRange(result.priceRange, DEFAULT_CURRENCY)}
-                    </Text>
-                  )}
+                  </View>
                   <View style={styles.priceCardDivider} />
                   <Text style={styles.priceCardGrading}>
                     Grading: <Text style={styles.priceCardGradingValue}>
@@ -995,6 +1107,7 @@ export default function ResultScreen() {
                 </LinearGradient>
               </View>
             )}
+
           </View>
 
             <View style={styles.similarSection}>
@@ -1035,6 +1148,28 @@ export default function ResultScreen() {
             <View style={styles.section}>
             <Text style={styles.sectionTitle}>About</Text>
             <Text style={styles.description}>{result.description}</Text>
+            {rarityInsights ? (
+              <View style={styles.rarityCard}>
+                <Text style={styles.rarityHeading}>Market Rarity</Text>
+                <Text style={styles.rarityLabel}>{rarityInsights.label}</Text>
+                <View style={styles.rarityTrack}>
+                  <LinearGradient
+                    colors={['#47613f', '#8b7a46', '#c8943c', '#b16535']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.rarityFill, { width: `${Math.max(6, rarityInsights.normalized * 100)}%` }]}
+                  />
+                  <View style={[styles.rarityKnob, { left: `${Math.max(1, Math.min(99, rarityInsights.normalized * 100))}%` }]} />
+                </View>
+                <View style={styles.rarityScaleRow}>
+                  <Text style={styles.rarityScaleText}>Very Common</Text>
+                  <Text style={styles.rarityScaleText}>Extremely Rare</Text>
+                </View>
+                <Text style={styles.raritySubtext}>
+                  Based on similar listing volume
+                </Text>
+              </View>
+            ) : null}
           </View>
 
             <View style={styles.section}>
@@ -1071,7 +1206,9 @@ export default function ResultScreen() {
               <InfoRow icon="⏱️" label="Longevity" value={result.longevity} />
               <InfoRow icon="💨" label="Sillage" value={result.sillage} />
               <InfoRow icon="📅" label="Year" value={result.yearLaunched} />
-              <InfoRow icon="👃" label="Perfumer" value={result.perfumer} />
+              {shouldShowPerfumer ? (
+                <InfoRow icon="👃" label="Perfumer" value={perfumerValue} />
+              ) : null}
             </View>
           </View>
 
@@ -1092,6 +1229,24 @@ export default function ResultScreen() {
               </View>
             </View>
           </View>
+
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.askPerfumeButton}
+                activeOpacity={0.85}
+                onPress={openPerfumeChat}
+              >
+                <LinearGradient
+                  colors={['#3c2d1a', '#2a1f0e']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.askPerfumeGradient}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={18} color="#f5ead4" />
+                  <Text style={styles.askPerfumeText}>Ask about this Perfume</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
 
             <View style={{ height: 100 }} />
           </Animated.View>
@@ -1782,6 +1937,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textAlign: 'center',
   },
+  priceCardAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: 2,
+    width: '100%',
+  },
+  priceCardCurrency: {
+    fontSize: FontSizes.xl,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginTop: 4,
+  },
   priceCardDivider: {
     width: '60%',
     height: 1,
@@ -1796,6 +1964,65 @@ const styles = StyleSheet.create({
   priceCardGradingValue: {
     fontWeight: '800',
     color: '#2a1f0e',
+  },
+  rarityCard: {
+    marginTop: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(200,148,60,0.28)',
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+  },
+  rarityHeading: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+    fontWeight: '700',
+  },
+  rarityLabel: {
+    marginTop: Spacing.xs,
+    fontSize: FontSizes.xl,
+    fontWeight: '800',
+    color: Colors.primary,
+  },
+  rarityTrack: {
+    marginTop: Spacing.md,
+    height: 10,
+    borderRadius: BorderRadius.full,
+    backgroundColor: '#2f2822',
+    overflow: 'visible',
+    position: 'relative',
+  },
+  rarityFill: {
+    height: 10,
+    borderRadius: BorderRadius.full,
+  },
+  rarityKnob: {
+    position: 'absolute',
+    top: -5,
+    marginLeft: -10,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#f1d08b',
+    borderWidth: 2,
+    borderColor: '#5a3f1d',
+  },
+  rarityScaleRow: {
+    marginTop: Spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  rarityScaleText: {
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  raritySubtext: {
+    marginTop: Spacing.sm,
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
   },
   sectionSubtitle: {
     fontSize: FontSizes.sm,
@@ -1939,7 +2166,7 @@ const styles = StyleSheet.create({
   footerBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     backgroundColor: Colors.background,
@@ -1954,6 +2181,26 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 8 },
     }),
+  },
+  askPerfumeButton: {
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(200,148,60,0.35)',
+    overflow: 'hidden',
+  },
+  askPerfumeGradient: {
+    minHeight: 42,
+    borderRadius: BorderRadius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  askPerfumeText: {
+    color: '#f5ead4',
+    fontSize: FontSizes.md,
+    fontWeight: '700',
   },
   retakeButton: {
     width: 46,

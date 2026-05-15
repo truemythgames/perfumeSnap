@@ -49,6 +49,15 @@ IMPORTANT: Do NOT include a "similarPerfumes" field. Only return the fields show
 
 Remember: you NEVER fail. You NEVER return "Unknown" or "identified: false". You always give a complete, confident answer.`;
 
+const PERFUME_CHAT_SYSTEM_PROMPT = `You are PerfumeSnap's perfume expert chat assistant.
+
+RULES:
+- Answer as a fragrance specialist using the supplied perfume context as the source of truth.
+- Keep answers concise, practical, and user-friendly.
+- If the user asks for recommendations, base them on the perfume's notes, season, occasion, concentration, longevity, and sillage from context.
+- If information is missing, say so briefly and provide the most helpful guidance possible.
+- Never output JSON; respond with plain natural language only.`;
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -101,16 +110,20 @@ export default {
     const url = new URL(request.url);
 
     try {
-      if (url.pathname === '/health') {
-        return jsonResponse({ status: 'ok', service: 'perfumesnap-api' });
-      }
+    if (url.pathname === '/health') {
+      return jsonResponse({ status: 'ok', service: 'perfumesnap-api' });
+    }
 
-      if (url.pathname === '/identify' && request.method === 'POST') {
+    if (url.pathname === '/identify' && request.method === 'POST') {
         return await handleIdentify(request, env);
       }
 
       if (url.pathname === '/lookup' && request.method === 'POST') {
         return await handleLookup(request, env);
+      }
+
+      if ((url.pathname === '/chat-perfume' || url.pathname === '/perfume-chat') && request.method === 'POST') {
+        return await handleChatPerfume(request, env);
       }
 
       if (url.pathname === '/scrape-image' && request.method === 'GET') {
@@ -138,9 +151,9 @@ export default {
       if (url.pathname.startsWith('/collection/') && request.method === 'DELETE') {
         const id = url.pathname.split('/')[2];
         return await handleDeleteFromCollection(request, env, id);
-      }
+    }
 
-      return jsonResponse({ error: 'Not found' }, 404);
+    return jsonResponse({ error: 'Not found' }, 404);
     } catch (err: any) {
       console.error('Unhandled error:', err);
       return jsonResponse({ error: 'Internal server error' }, 500);
@@ -151,9 +164,9 @@ export default {
 // ----------------------------- Handlers -----------------------------
 
 async function handleIdentify(request: Request, env: Env): Promise<Response> {
-  if (!env.OPENAI_API_KEY) {
-    return jsonResponse({ error: 'Server misconfigured: missing API key' }, 500);
-  }
+    if (!env.OPENAI_API_KEY) {
+      return jsonResponse({ error: 'Server misconfigured: missing API key' }, 500);
+    }
 
   let body: { image?: string };
   try {
@@ -170,30 +183,30 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
     return jsonResponse({ error: 'Image too large' }, 413);
   }
 
-  const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Identify this perfume and provide detailed information.' },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${body.image}`,
-                detail: 'high',
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Identify this perfume and provide detailed information.' },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/jpeg;base64,${body.image}`,
+                  detail: 'high',
+                },
               },
-            },
-          ],
-        },
-      ],
+            ],
+          },
+        ],
       max_tokens: 2000,
       temperature: 0.3,
     }),
@@ -258,29 +271,112 @@ async function handleLookup(request: Request, env: Env): Promise<Response> {
         },
       ],
       max_tokens: 2000,
-      temperature: 0.3,
-    }),
-  });
+        temperature: 0.3,
+      }),
+    });
 
-  if (!openaiResponse.ok) {
-    const err = await openaiResponse.text();
-    console.error('OpenAI error:', err);
-    return jsonResponse({ error: 'AI service error' }, 502);
-  }
+    if (!openaiResponse.ok) {
+      const err = await openaiResponse.text();
+      console.error('OpenAI error:', err);
+      return jsonResponse({ error: 'AI service error' }, 502);
+    }
 
-  const data = await openaiResponse.json<{
-    choices: { message: { content: string } }[];
-  }>();
+    const data = await openaiResponse.json<{
+      choices: { message: { content: string } }[];
+    }>();
 
-  const raw = data.choices?.[0]?.message?.content?.trim();
+    const raw = data.choices?.[0]?.message?.content?.trim();
   if (!raw) return jsonResponse({ error: 'Empty AI response' }, 502);
 
-  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   try {
     return jsonResponse(JSON.parse(cleaned));
   } catch {
     return jsonResponse({ error: 'AI response was not valid JSON' }, 502);
   }
+}
+
+async function handleChatPerfume(request: Request, env: Env): Promise<Response> {
+  if (!env.OPENAI_API_KEY) {
+    return jsonResponse({ error: 'Server misconfigured: missing API key' }, 500);
+  }
+
+  type ChatMessage = { role: 'user' | 'assistant'; content: string };
+  let body: {
+    perfume?: Record<string, unknown>;
+    question?: string;
+    history?: ChatMessage[];
+  };
+  try {
+    body = await request.json<typeof body>();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.perfume || typeof body.perfume !== 'object') {
+    return jsonResponse({ error: 'Missing "perfume" field' }, 400);
+  }
+  if (!body.question || typeof body.question !== 'string' || !body.question.trim()) {
+    return jsonResponse({ error: 'Missing "question" field' }, 400);
+  }
+
+  const history = Array.isArray(body.history) ? body.history : [];
+  const sanitizedHistory: ChatMessage[] = history
+    .filter((msg) => msg && (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string')
+    .map((msg) => ({ role: msg.role, content: msg.content.trim() }))
+    .filter((msg) => msg.content.length > 0)
+    .slice(-10);
+
+  const perfumeContext = JSON.stringify({
+    name: body.perfume.name || '',
+    brand: body.perfume.brand || '',
+    description: body.perfume.description || '',
+    concentration: body.perfume.concentration || '',
+    topNotes: Array.isArray(body.perfume.topNotes) ? body.perfume.topNotes : [],
+    heartNotes: Array.isArray(body.perfume.heartNotes) ? body.perfume.heartNotes : [],
+    baseNotes: Array.isArray(body.perfume.baseNotes) ? body.perfume.baseNotes : [],
+    longevity: body.perfume.longevity || '',
+    sillage: body.perfume.sillage || '',
+    occasions: Array.isArray(body.perfume.occasions) ? body.perfume.occasions : [],
+    seasons: Array.isArray(body.perfume.seasons) ? body.perfume.seasons : [],
+    yearLaunched: body.perfume.yearLaunched || '',
+    fragranceFamily: body.perfume.fragranceFamily || '',
+    gender: body.perfume.gender || '',
+  });
+
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: PERFUME_CHAT_SYSTEM_PROMPT },
+    { role: 'system', content: `Perfume context:\n${perfumeContext}` },
+    ...sanitizedHistory,
+    { role: 'user', content: body.question.trim() },
+  ];
+
+  const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages,
+      max_tokens: 450,
+      temperature: 0.4,
+    }),
+  });
+
+  if (!openaiResponse.ok) {
+    const err = await openaiResponse.text();
+    console.error('OpenAI chat error:', err);
+    return jsonResponse({ error: 'AI chat service error' }, 502);
+  }
+
+  const data = await openaiResponse.json<{
+    choices: { message: { content: string } }[];
+  }>();
+  const answer = data.choices?.[0]?.message?.content?.trim();
+  if (!answer) return jsonResponse({ error: 'Empty AI response' }, 502);
+  return jsonResponse({ answer });
 }
 
 async function handleScrapeImage(url: URL): Promise<Response> {

@@ -31,6 +31,13 @@ export default function RootLayout() {
             animationDuration: 250,
           }}
         />
+        <Stack.Screen
+          name="perfume-chat"
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 250,
+          }}
+        />
       </Stack>
     </>
   );

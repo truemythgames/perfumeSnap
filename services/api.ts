@@ -48,6 +48,11 @@ export interface PerfumeResult {
   cachedSimilarListings?: SimilarPerfume[];
 }
 
+export interface PerfumeChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export function buildShoppingUrl(perfumeName: string, brand: string, retailer?: string): string {
   const query = encodeURIComponent(`${brand} ${perfumeName} perfume`);
   const key = (retailer || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -296,4 +301,53 @@ export async function getSimilarListings(name: string, brand: string): Promise<S
     console.error('[PerfumeSnap] getSimilarListings error:', err);
     return [];
   }
+}
+
+export async function chatAboutPerfume(
+  perfume: PerfumeResult,
+  question: string,
+  history: PerfumeChatMessage[] = [],
+): Promise<string> {
+  const trimmedQuestion = question.trim();
+  if (!trimmedQuestion) {
+    throw new Error('Question cannot be empty.');
+  }
+
+  const payload = JSON.stringify({
+    perfume,
+    question: trimmedQuestion,
+    history,
+  });
+
+  const endpoints = ['/chat-perfume', '/perfume-chat'];
+  let lastError: string | null = null;
+
+  for (const endpoint of endpoints) {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    });
+
+    if (res.status === 404) {
+      lastError = 'Not found';
+      continue;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => null) as { error?: string } | null;
+      throw new Error(err?.error || `Chat failed (${res.status})`);
+    }
+
+    const data = await res.json() as { answer?: string };
+    if (!data.answer || typeof data.answer !== 'string') {
+      throw new Error('Invalid chat response.');
+    }
+    return data.answer.trim();
+  }
+
+  if (lastError === 'Not found') {
+    throw new Error('Chat endpoint not found. Restart or redeploy the API server.');
+  }
+  throw new Error('Chat failed.');
 }
