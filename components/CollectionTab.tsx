@@ -251,7 +251,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     const midpoints = items
       .map((it) => computeLivePriceDisplay(it)?.midpoint ?? null)
       .filter((v): v is number => v !== null);
-    const totalValue = Math.round(midpoints.reduce((sum, v) => sum + v, 0));
+    const totalValue = midpoints.reduce((sum, v) => sum + v, 0);
     return { count: items.length, brands: brands.size, totalValue };
   }, [items]);
 
@@ -312,7 +312,9 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     <View style={styles.statsSection}>
       <View style={styles.valueWrap}>
         <Text style={styles.valueCurrency}>$</Text>
-        <Text style={styles.valueAmount}>{stats.totalValue.toLocaleString()}</Text>
+        <Text style={styles.valueAmount}>
+          {stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </Text>
       </View>
 
       <View style={styles.valueLabelWrap}>
