@@ -26,7 +26,7 @@ function getBadgeLabel(retailer?: string): string | null {
   return null;
 }
 
-const CARD_IMAGE_HEIGHTS = [155, 175, 168, 188, 162, 180, 170, 192];
+const CARD_IMAGE_HEIGHTS = [138, 156, 148, 166, 144, 160, 152, 170];
 
 function getTitle(perfume: SimilarPerfume): string {
   const title = `${perfume.brand || ''} ${perfume.name || ''}`.trim();
@@ -73,9 +73,6 @@ function PerfumeCard({ perfume, idx }: { perfume: SimilarPerfume; idx: number })
         <Text style={styles.name} numberOfLines={2}>
           {title}
         </Text>
-        {perfume.estimatedPrice ? (
-          <Text style={styles.price}>{perfume.estimatedPrice}</Text>
-        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -211,21 +208,15 @@ const styles = StyleSheet.create({
   },
   cardBody: {
     paddingHorizontal: 10,
-    paddingTop: 9,
-    paddingBottom: 10,
-    minHeight: 92,
+    paddingTop: 8,
+    paddingBottom: 9,
+    minHeight: 64,
   },
   name: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#1f1b16',
-    lineHeight: 22,
-    fontWeight: '500',
-  },
-  price: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2b2b2b',
-    marginTop: 7,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   loadingWrap: {
     flex: 1,

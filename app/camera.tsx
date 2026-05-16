@@ -310,7 +310,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     textAlign: 'center',
   },
-
   cameraCard: {
     marginTop: Spacing.sm,
     marginHorizontal: CARD_HORIZONTAL_PADDING,

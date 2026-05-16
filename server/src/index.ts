@@ -181,7 +181,7 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
   // Roughly cap base64 payload size (base64 inflates by ~33%)
   if (body.image.length > Math.ceil((MAX_IMAGE_BYTES * 4) / 3)) {
     return jsonResponse({ error: 'Image too large' }, 413);
-  }
+    }
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
