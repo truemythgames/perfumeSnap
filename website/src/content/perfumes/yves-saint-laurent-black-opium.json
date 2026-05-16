@@ -1,0 +1,39 @@
+{
+  "name": "Black Opium",
+  "brand": "Yves Saint Laurent",
+  "slug": "yves-saint-laurent-black-opium",
+  "description": "Black Opium is a rock'n'roll-inspired gourmand fragrance launched by YSL in 2014. It was a game-changer in women's perfumery, introducing the now-ubiquitous coffee note as a main accord. The addictive blend of coffee, vanilla, and white flowers creates an electrifying scent that perfectly captures youthful energy and nightlife glamour.",
+  "fragranceFamily": "Amber Vanilla",
+  "concentration": "Eau de Parfum",
+  "topNotes": [
+    "Pink Pepper",
+    "Orange Blossom",
+    "Pear"
+  ],
+  "middleNotes": [
+    "Coffee",
+    "Jasmine",
+    "Bitter Almond",
+    "Licorice"
+  ],
+  "baseNotes": [
+    "Vanilla",
+    "Patchouli",
+    "Cedar",
+    "Cashmere Wood"
+  ],
+  "longevity": "Long-lasting (8-10 hours)",
+  "sillage": "Strong",
+  "occasions": [
+    "Nightlife",
+    "Date Night",
+    "Evening",
+    "Parties"
+  ],
+  "seasons": [
+    "Fall",
+    "Winter"
+  ],
+  "priceRange": "$80 - $150",
+  "gender": "Women"
+}

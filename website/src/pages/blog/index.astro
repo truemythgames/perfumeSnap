@@ -1,0 +1,52 @@
+---
+import Base from "@/layouts/Base.astro";
+import DownloadCTA from "@/components/DownloadCTA.astro";
+import { getAllPosts } from "@/lib/blog";
+import { breadcrumbJsonLd } from "@/lib/structured-data";
+
+const posts = getAllPosts();
+const jsonLd = [breadcrumbJsonLd([
+  { name: "Home", href: "/" },
+  { name: "Blog", href: "/blog" },
+])];
+---
+
+<Base
+  title="Blog — Perfume Guides, Tips & Reviews"
+  description="Learn about fragrances with our expert guides. Tips on choosing perfumes, making them last longer, understanding notes, and more."
+  canonical="https://perfumesnap.app/blog"
+  jsonLd={jsonLd}
+>
+  <div class="mx-auto max-w-4xl px-6 py-16 md:py-24">
+    <div class="mb-12">
+      <h1 class="text-3xl md:text-5xl font-bold text-foreground mb-4">PerfumeSnap Blog</h1>
+      <p class="text-muted text-lg">Guides, tips, and insights about the world of fragrances.</p>
+    </div>
+
+    {posts.length > 0 ? (
+      <div class="space-y-6 mb-16">
+        {posts.map((post) => (
+          <a href={`/blog/${post.slug}`} class="block rounded-2xl bg-surface border border-border p-6 hover:border-primary/40 transition-all group">
+            <div class="flex flex-wrap gap-2 mb-3">
+              {post.tags.map((tag) => (
+                <span class="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full">{tag}</span>
+              ))}
+            </div>
+            <h2 class="text-xl font-semibold text-foreground group-hover:text-primary transition-colors mb-2">{post.title}</h2>
+            <p class="text-sm text-muted leading-relaxed mb-3">{post.description}</p>
+            <time class="text-xs text-muted-dark">
+              {new Date(post.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+            </time>
+          </a>
+        ))}
+      </div>
+    ) : (
+      <div class="text-center py-20 mb-16">
+        <p class="text-muted text-lg mb-2">Blog posts coming soon.</p>
+        <p class="text-muted-dark text-sm">Stay tuned for fragrance guides, tips, and reviews.</p>
+      </div>
+    )}
+
+    <DownloadCTA />
+  </div>
+</Base>

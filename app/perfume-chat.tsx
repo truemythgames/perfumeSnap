@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BorderRadius, Colors, FontSizes, Spacing } from '../constants/theme';
 import { chatAboutPerfume, PerfumeChatMessage, PerfumeResult } from '../services/api';
+import { trackScreenView, trackChatMessageSent } from '../services/analytics';
 
 type ChatRow = {
   id: string;
@@ -52,6 +53,10 @@ export default function PerfumeChatScreen() {
     ];
   });
 
+  useEffect(() => {
+    trackScreenView('perfume_chat');
+  }, []);
+
   const canSend = Boolean(input.trim()) && !sending && Boolean(perfume);
 
   const onSend = async () => {
@@ -60,6 +65,7 @@ export default function PerfumeChatScreen() {
     setInput('');
     setError(null);
 
+    trackChatMessageSent();
     const userMessage: ChatRow = {
       id: `u-${Date.now()}`,
       role: 'user',

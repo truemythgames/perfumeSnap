@@ -1,0 +1,41 @@
+{
+  "name": "Aventus",
+  "brand": "Creed",
+  "slug": "creed-aventus",
+  "description": "Aventus by Creed is a legendary niche fragrance that has achieved cult status since its 2010 launch. Inspired by the dramatic life of a historic emperor, it celebrates strength, vision, and success. Its unique blend of fruity and smoky notes creates an unmistakable signature that has spawned countless imitators but remains unmatched.",
+  "fragranceFamily": "Fruity Chypre",
+  "concentration": "Eau de Parfum",
+  "topNotes": [
+    "Pineapple",
+    "Bergamot",
+    "Black Currant",
+    "Apple"
+  ],
+  "middleNotes": [
+    "Birch",
+    "Patchouli",
+    "Moroccan Jasmine",
+    "Rose"
+  ],
+  "baseNotes": [
+    "Musk",
+    "Oak Moss",
+    "Ambergris",
+    "Vanilla"
+  ],
+  "longevity": "Very Long-lasting (10-12 hours)",
+  "sillage": "Strong",
+  "occasions": [
+    "Business",
+    "Special Occasions",
+    "Date Night",
+    "Celebrations"
+  ],
+  "seasons": [
+    "Spring",
+    "Summer",
+    "Fall"
+  ],
+  "priceRange": "$300 - $445",
+  "gender": "Men"
+}

@@ -1,0 +1,40 @@
+{
+  "name": "Sauvage",
+  "brand": "Dior",
+  "slug": "dior-sauvage",
+  "description": "Sauvage by Dior is an iconic masculine fragrance that embodies rugged elegance and raw magnetism. Inspired by wide-open spaces under a burning blue sky, this scent blends fresh, spicy, and woody elements into a modern powerhouse that has become one of the best-selling men's fragrances worldwide since its launch in 2015.",
+  "fragranceFamily": "Aromatic Fougère",
+  "concentration": "Eau de Toilette",
+  "topNotes": [
+    "Bergamot",
+    "Pepper"
+  ],
+  "middleNotes": [
+    "Lavender",
+    "Pink Pepper",
+    "Sichuan Pepper",
+    "Vetiver",
+    "Patchouli",
+    "Geranium"
+  ],
+  "baseNotes": [
+    "Ambroxan",
+    "Cedar",
+    "Labdanum"
+  ],
+  "longevity": "Long-lasting (8-10 hours)",
+  "sillage": "Strong",
+  "occasions": [
+    "Daily Wear",
+    "Office",
+    "Date Night",
+    "Casual"
+  ],
+  "seasons": [
+    "Spring",
+    "Fall",
+    "Winter"
+  ],
+  "priceRange": "$80 - $150",
+  "gender": "Men"
+}

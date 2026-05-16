@@ -1,0 +1,39 @@
+---
+import Base from "@/layouts/Base.astro";
+import DownloadCTA from "@/components/DownloadCTA.astro";
+import PerfumeSearch from "@/components/PerfumeSearch";
+import { getAllPerfumes } from "@/lib/perfumes";
+import { breadcrumbJsonLd } from "@/lib/structured-data";
+
+const perfumes = getAllPerfumes();
+const jsonLd = [breadcrumbJsonLd([
+  { name: "Home", href: "/" },
+  { name: "Perfumes", href: "/perfumes" },
+])];
+---
+
+<Base
+  title="Perfume Database — Explore Popular Fragrances"
+  description={`Explore popular perfumes with notes, fragrance families, and more. Download PerfumeSnap to identify any perfume from a photo and get live prices.`}
+  canonical="https://perfumesnap.app/perfumes"
+  jsonLd={jsonLd}
+>
+  <div class="mx-auto max-w-3xl px-6 py-16 md:py-24">
+    <div class="mb-10">
+      <h1 class="text-3xl md:text-5xl font-bold text-foreground mb-4">Find your scent</h1>
+      <p class="text-muted text-lg max-w-xl">
+        Search {perfumes.length.toLocaleString()}+ perfumes by name, brand, or ingredient — or snap a photo to identify any bottle instantly.
+      </p>
+    </div>
+
+    <PerfumeSearch client:load perfumes={perfumes} />
+
+    <div class="mt-16"></div>
+
+    <DownloadCTA
+      variant="banner"
+      heading="Don't see yours?"
+      subheading="Point your camera at any bottle — our AI knows 30,000+ perfumes. Get notes, prices, and similar scents instantly."
+    />
+  </div>
+</Base>

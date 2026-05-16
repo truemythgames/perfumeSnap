@@ -26,6 +26,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
+import { trackPhotoTaken, trackGalleryPick, trackScreenView } from '../services/analytics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_HORIZONTAL_PADDING = 20;
@@ -51,6 +52,7 @@ export default function CameraScreen() {
   const sliderX = useSharedValue(TRACK_WIDTH * INITIAL_ZOOM_PCT);
 
   useEffect(() => {
+    trackScreenView('camera');
     capturePulse.value = withRepeat(
       withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
       -1,
@@ -127,6 +129,7 @@ export default function CameraScreen() {
         shutterSound: false,
       });
       if (photo?.uri) {
+        trackPhotoTaken();
         router.replace({
           pathname: '/result',
           params: { imageUri: photo.uri },
@@ -159,6 +162,7 @@ export default function CameraScreen() {
     });
 
     if (!result.canceled && result.assets[0]?.base64) {
+      trackGalleryPick();
       router.replace({
         pathname: '/result',
         params: {

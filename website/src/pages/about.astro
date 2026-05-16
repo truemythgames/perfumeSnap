@@ -1,0 +1,54 @@
+---
+import Base from "@/layouts/Base.astro";
+import DownloadCTA from "@/components/DownloadCTA.astro";
+import { breadcrumbJsonLd } from "@/lib/structured-data";
+
+const jsonLd = [breadcrumbJsonLd([
+  { name: "Home", href: "/" },
+  { name: "About", href: "/about" },
+])];
+
+const FEATURES = [
+  "AI-powered perfume identification from photos",
+  "Complete fragrance profiles with notes, family, and concentration",
+  "Longevity and sillage performance ratings",
+  "Live price comparison from top retailers",
+  "Similar fragrance recommendations",
+  "Personal collection management",
+  "AI perfume expert chat for any question",
+];
+---
+
+<Base
+  title="About PerfumeSnap"
+  description="PerfumeSnap uses AI to help you identify and discover perfumes. Learn about our mission to make fragrance knowledge accessible to everyone."
+  canonical="https://perfumesnap.app/about"
+  jsonLd={jsonLd}
+>
+  <div class="mx-auto max-w-3xl px-6 py-16 md:py-24">
+    <h1 class="text-3xl md:text-5xl font-bold text-foreground mb-8">About PerfumeSnap</h1>
+
+    <div class="space-y-6 text-muted leading-relaxed text-lg">
+      <p>PerfumeSnap was born from a simple idea: what if you could point your phone at any perfume bottle and instantly know everything about it?</p>
+      <p>We built an AI-powered app that identifies fragrances from photos, breaks down their complete notes pyramid, shows you where to buy them at the best prices, and helps you build your personal perfume collection.</p>
+      <p>Whether you&apos;re a fragrance enthusiast who wants to catalog every scent you encounter, a newcomer trying to understand what makes a perfume special, or a gift shopper looking for the perfect fragrance — PerfumeSnap puts expert-level knowledge in your pocket.</p>
+
+      <h2 class="text-2xl font-semibold text-foreground pt-4">What we offer</h2>
+      <ul class="space-y-3 list-none">
+        {FEATURES.map((item) => (
+          <li class="flex items-start gap-3">
+            <span class="w-1.5 h-1.5 rounded-full bg-primary mt-2.5 shrink-0"></span>
+            {item}
+          </li>
+        ))}
+      </ul>
+
+      <h2 class="text-2xl font-semibold text-foreground pt-4">Our mission</h2>
+      <p>The fragrance world can feel overwhelming and exclusive. We believe everyone deserves access to expert-level perfume knowledge. PerfumeSnap democratizes fragrance discovery by making it as simple as taking a photo.</p>
+    </div>
+
+    <div class="mt-16">
+      <DownloadCTA variant="banner" />
+    </div>
+  </div>
+</Base>

@@ -1,0 +1,39 @@
+{
+  "name": "Eros",
+  "brand": "Versace",
+  "slug": "versace-eros",
+  "description": "Versace Eros, named after the Greek god of love, is a bold and vibrant fragrance launched in 2012. Designed by Aurelien Guichard, this scent embodies passion and desire through a striking combination of fresh mint, sweet vanilla, and earthy tonka bean. It has become one of the most popular clubbing and nightlife fragrances.",
+  "fragranceFamily": "Aromatic Fougère",
+  "concentration": "Eau de Toilette",
+  "topNotes": [
+    "Mint",
+    "Green Apple",
+    "Lemon"
+  ],
+  "middleNotes": [
+    "Tonka Bean",
+    "Ambroxan",
+    "Geranium"
+  ],
+  "baseNotes": [
+    "Vanilla",
+    "Vetiver",
+    "Oak Moss",
+    "Cedar"
+  ],
+  "longevity": "Long-lasting (8-10 hours)",
+  "sillage": "Strong",
+  "occasions": [
+    "Nightlife",
+    "Date Night",
+    "Casual",
+    "Parties"
+  ],
+  "seasons": [
+    "Spring",
+    "Summer",
+    "Fall"
+  ],
+  "priceRange": "$60 - $110",
+  "gender": "Men"
+}

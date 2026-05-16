@@ -25,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import HomeTab from '../components/HomeTab';
 import CollectionTab, { CollectionTabHandle } from '../components/CollectionTab';
 import { Colors, Spacing, FontSizes } from '../constants/theme';
+import { trackCameraOpened, trackTabSwitch } from '../services/analytics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAMERA_BTN_SIZE = 70;
@@ -59,6 +60,7 @@ export default function MainScreen() {
 
   const switchTab = (page: number) => {
     setActiveTab(page);
+    trackTabSwitch(page === 0 ? 'home' : 'collection');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -142,6 +144,7 @@ export default function MainScreen() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return;
+    trackCameraOpened();
     router.push('/camera');
   };
 

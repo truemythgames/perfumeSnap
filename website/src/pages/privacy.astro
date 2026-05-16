@@ -1,0 +1,58 @@
+---
+import Base from "@/layouts/Base.astro";
+
+const lastUpdated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+---
+
+<Base
+  title="Privacy Policy"
+  description="PerfumeSnap privacy policy. Learn how we handle your data."
+  canonical="https://perfumesnap.app/privacy"
+>
+  <div class="mx-auto max-w-3xl px-6 py-16 md:py-24">
+    <h1 class="text-3xl md:text-4xl font-bold text-foreground mb-8">Privacy Policy</h1>
+    <p class="text-sm text-muted-dark mb-8">Last updated: {lastUpdated}</p>
+
+    <div class="space-y-8 text-muted leading-relaxed">
+      <section>
+        <h2 class="text-xl font-semibold text-foreground mb-3">Overview</h2>
+        <p>PerfumeSnap ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our mobile application and website.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold text-foreground mb-3">Information We Collect</h2>
+        <p class="mb-3">PerfumeSnap is designed with privacy in mind. We collect minimal data:</p>
+        <ul class="list-disc pl-5 space-y-2">
+          <li><strong class="text-foreground">Anonymous Device ID</strong> — A randomly generated identifier stored on your device, used to sync your collection. We never link this to your personal identity.</li>
+          <li><strong class="text-foreground">Photos</strong> — Photos you submit for identification are processed by our AI and are not permanently stored unless you save a perfume to your collection.</li>
+          <li><strong class="text-foreground">Collection Data</strong> — Perfumes you save to your collection, including names, brands, and notes.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold text-foreground mb-3">What We Don&apos;t Collect</h2>
+        <ul class="list-disc pl-5 space-y-2">
+          <li>We do not require an account or personal information</li>
+          <li>We do not collect your name, email, or phone number</li>
+          <li>We do not track your location</li>
+          <li>We do not sell or share your data with third parties for advertising</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold text-foreground mb-3">Data Storage & Security</h2>
+        <p>Your collection data is stored securely on our servers. Photos submitted for identification are processed in real-time and not retained beyond the identification session unless saved to your collection.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold text-foreground mb-3">Third-Party Services</h2>
+        <p>We use AI services to power perfume identification and chat features. Photos and queries are processed by these services but are not used for training or stored beyond the processing session.</p>
+      </section>
+
+      <section>
+        <h2 class="text-xl font-semibold text-foreground mb-3">Contact</h2>
+        <p>If you have questions about this Privacy Policy, please contact us at <a href="mailto:contact@perfumesnap.app" class="text-primary underline underline-offset-4">contact@perfumesnap.app</a>.</p>
+      </section>
+    </div>
+  </div>
+</Base>

@@ -14,6 +14,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SimilarPerfume, getSimilarListings, buildShoppingUrl } from '../services/api';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
+import { trackScreenView, trackRetailerTap } from '../services/analytics';
 
 const BADGE_MAP: Record<string, string> = { amazon: 'Amazon', ebay: 'eBay', walmart: 'Walmart' };
 
@@ -47,7 +48,10 @@ function PerfumeCard({ perfume, idx }: { perfume: SimilarPerfume; idx: number })
     <TouchableOpacity
       style={styles.card}
       activeOpacity={0.85}
-      onPress={() => WebBrowser.openBrowserAsync(directUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET })}
+      onPress={() => {
+        trackRetailerTap(perfume.retailer || 'unknown', title);
+        WebBrowser.openBrowserAsync(directUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET });
+      }}
     >
       <View style={[styles.imageWrap, { height: imageHeight }]}>
         {!hasImage && (
@@ -86,6 +90,7 @@ export default function SimilarScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    trackScreenView('similar');
     const name = params.name;
     const brand = params.brand || '';
 

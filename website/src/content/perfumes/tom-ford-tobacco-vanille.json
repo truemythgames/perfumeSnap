@@ -1,0 +1,37 @@
+{
+  "name": "Tobacco Vanille",
+  "brand": "Tom Ford",
+  "slug": "tom-ford-tobacco-vanille",
+  "description": "Tobacco Vanille from Tom Ford's Private Blend collection is a warm, opulent fragrance that evokes a gentleman's club with its rich blend of tobacco leaf and aromatic spices wrapped in creamy vanilla. Launched in 2007, it has become one of the most beloved cold-weather fragrances and a benchmark in the tobacco fragrance category.",
+  "fragranceFamily": "Oriental Spicy",
+  "concentration": "Eau de Parfum",
+  "topNotes": [
+    "Tobacco Leaf",
+    "Spicy Notes"
+  ],
+  "middleNotes": [
+    "Tonka Bean",
+    "Vanilla",
+    "Cacao",
+    "Ginger"
+  ],
+  "baseNotes": [
+    "Dried Fruits",
+    "Woody Notes",
+    "Suede"
+  ],
+  "longevity": "Very Long-lasting (10-12 hours)",
+  "sillage": "Strong",
+  "occasions": [
+    "Evening",
+    "Winter Events",
+    "Formal",
+    "Date Night"
+  ],
+  "seasons": [
+    "Fall",
+    "Winter"
+  ],
+  "priceRange": "$250 - $400",
+  "gender": "Unisex"
+}

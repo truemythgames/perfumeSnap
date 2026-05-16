@@ -1,0 +1,63 @@
+---
+const FOOTER_SECTIONS = [
+  {
+    title: "Product",
+    links: [
+      { href: "/perfumes", label: "Perfume Database" },
+      { href: "/blog", label: "Blog" },
+      { href: "/#features", label: "Features" },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { href: "/about", label: "About" },
+      { href: "/support", label: "Support" },
+      { href: "/privacy", label: "Privacy Policy" },
+      { href: "/terms", label: "Terms of Service" },
+    ],
+  },
+];
+
+const year = new Date().getFullYear();
+---
+
+<footer class="border-t border-border bg-surface">
+  <div class="mx-auto max-w-6xl px-6 py-16">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-10">
+      <div class="md:col-span-2">
+        <a href="/" class="flex items-center gap-2.5 mb-4">
+          <img src="/logo.png" alt="PerfumeSnap" width="32" height="32" class="rounded-lg" />
+          <span class="text-lg font-semibold text-foreground">PerfumeSnap</span>
+        </a>
+        <p class="text-muted text-sm leading-relaxed max-w-sm">
+          Identify any perfume instantly with AI. Get the full fragrance profile, notes breakdown, and price comparison.
+        </p>
+      </div>
+
+      {FOOTER_SECTIONS.map((section) => (
+        <div>
+          <h3 class="text-sm font-semibold text-foreground mb-4">{section.title}</h3>
+          <ul class="space-y-2.5">
+            {section.links.map((link) => (
+              <li>
+                <a href={link.href} class="text-sm text-muted hover:text-foreground transition-colors">
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+
+    <div class="mt-12 pt-8 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+      <p class="text-xs text-muted-dark">&copy; {year} PerfumeSnap. All rights reserved.</p>
+      <div class="flex items-center gap-4">
+        <a href="#download" class="text-xs text-muted hover:text-primary transition-colors">Download for iOS</a>
+        <span class="text-border">|</span>
+        <a href="#download" class="text-xs text-muted hover:text-primary transition-colors">Download for Android</a>
+      </div>
+    </div>
+  </div>
+</footer>

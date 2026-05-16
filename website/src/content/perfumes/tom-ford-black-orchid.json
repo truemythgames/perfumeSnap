@@ -1,0 +1,43 @@
+{
+  "name": "Black Orchid",
+  "brand": "Tom Ford",
+  "slug": "tom-ford-black-orchid",
+  "description": "Black Orchid was Tom Ford's debut fragrance, launched in 2006, and it remains one of his most iconic creations. This luxurious, daring scent pushes the boundaries of floral fragrances by combining rich dark florals with spicy accords and deep gourmand notes. It redefined what a modern fragrance could be.",
+  "fragranceFamily": "Oriental Floral",
+  "concentration": "Eau de Parfum",
+  "topNotes": [
+    "Truffle",
+    "Ylang-Ylang",
+    "Black Currant",
+    "Bergamot"
+  ],
+  "middleNotes": [
+    "Black Orchid",
+    "Spicy Orchid",
+    "Lotus Wood",
+    "Fruity Notes"
+  ],
+  "baseNotes": [
+    "Patchouli",
+    "Sandalwood",
+    "Dark Chocolate",
+    "Incense",
+    "Amber",
+    "Vanilla",
+    "Vetiver",
+    "Balsam"
+  ],
+  "longevity": "Long-lasting (8-10 hours)",
+  "sillage": "Strong",
+  "occasions": [
+    "Evening",
+    "Special Occasions",
+    "Date Night"
+  ],
+  "seasons": [
+    "Fall",
+    "Winter"
+  ],
+  "priceRange": "$120 - $180",
+  "gender": "Unisex"
+}

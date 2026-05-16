@@ -1,0 +1,39 @@
+{
+  "name": "Coco Mademoiselle",
+  "brand": "Chanel",
+  "slug": "chanel-coco-mademoiselle",
+  "description": "Coco Mademoiselle is a fresh, oriental fragrance for women created by Jacques Polge for Chanel in 2001. Named after Coco Chanel herself, it captures a spirit of irreverence and modernity. This scent has become one of the best-selling women's fragrances of all time, beloved for its balanced, elegant, yet youthful character.",
+  "fragranceFamily": "Oriental Floral",
+  "concentration": "Eau de Parfum",
+  "topNotes": [
+    "Orange",
+    "Bergamot",
+    "Grapefruit"
+  ],
+  "middleNotes": [
+    "Rose",
+    "Jasmine",
+    "Lychee"
+  ],
+  "baseNotes": [
+    "Patchouli",
+    "Vetiver",
+    "Vanilla",
+    "White Musk"
+  ],
+  "longevity": "Long-lasting (6-8 hours)",
+  "sillage": "Moderate",
+  "occasions": [
+    "Daily Wear",
+    "Office",
+    "Date Night",
+    "Casual"
+  ],
+  "seasons": [
+    "Spring",
+    "Summer",
+    "Fall"
+  ],
+  "priceRange": "$100 - $170",
+  "gender": "Women"
+}

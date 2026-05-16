@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { isApiConfigured } from '../services/api';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
+import { trackCameraOpened } from '../services/analytics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -163,6 +164,7 @@ export default function HomeTab() {
       );
       return;
     }
+    trackCameraOpened();
     router.push('/camera');
   };
 

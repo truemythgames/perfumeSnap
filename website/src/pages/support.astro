@@ -1,0 +1,48 @@
+---
+import Base from "@/layouts/Base.astro";
+import DownloadCTA from "@/components/DownloadCTA.astro";
+---
+
+<Base
+  title="Support"
+  description="Need help with PerfumeSnap? Find answers to common questions or get in touch with our support team."
+  canonical="https://perfumesnap.app/support"
+>
+  <div class="mx-auto max-w-3xl px-6 py-16 md:py-24">
+    <h1 class="text-3xl md:text-4xl font-bold text-foreground mb-4">Support</h1>
+    <p class="text-muted text-lg mb-12">Need help? We&apos;re here to assist you.</p>
+
+    <div class="space-y-8">
+      <div class="rounded-2xl bg-surface border border-border p-6">
+        <h2 class="text-lg font-semibold text-foreground mb-3">Common Questions</h2>
+        <div class="space-y-4 text-muted">
+          <div>
+            <h3 class="font-medium text-foreground">The app isn&apos;t identifying my perfume correctly</h3>
+            <p class="text-sm mt-1">For best results, take a clear photo of the front label in good lighting. Avoid reflections and ensure the full bottle is visible.</p>
+          </div>
+          <div>
+            <h3 class="font-medium text-foreground">My collection isn&apos;t syncing</h3>
+            <p class="text-sm mt-1">Collections sync automatically when connected to the internet. Try closing and reopening the app if data appears out of date.</p>
+          </div>
+          <div>
+            <h3 class="font-medium text-foreground">How do I delete my data?</h3>
+            <p class="text-sm mt-1">You can delete individual items from your collection within the app. For a full data deletion request, contact us at the email below.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-2xl bg-surface border border-border p-6">
+        <h2 class="text-lg font-semibold text-foreground mb-3">Contact Us</h2>
+        <p class="text-muted text-sm mb-4">Can&apos;t find what you&apos;re looking for? Reach out directly.</p>
+        <a href="mailto:contact@perfumesnap.app" class="inline-flex items-center gap-2 text-primary hover:text-accent transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" /></svg>
+          contact@perfumesnap.app
+        </a>
+      </div>
+    </div>
+
+    <div class="mt-16">
+      <DownloadCTA />
+    </div>
+  </div>
+</Base>

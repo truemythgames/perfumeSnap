@@ -1,0 +1,41 @@
+{
+  "name": "Acqua di Gio",
+  "brand": "Giorgio Armani",
+  "slug": "giorgio-armani-acqua-di-gio",
+  "description": "Acqua di Gio by Giorgio Armani is a legendary aquatic fragrance launched in 1996 that defined the fresh, marine genre. Inspired by the beauty of Pantelleria, a Mediterranean island where Armani spent his vacations, this scent captures the essence of sea, sun, and freedom. It remains one of the top-selling men's fragrances decades after its release.",
+  "fragranceFamily": "Aquatic Aromatic",
+  "concentration": "Eau de Toilette",
+  "topNotes": [
+    "Bergamot",
+    "Neroli",
+    "Green Tangerine",
+    "Lime"
+  ],
+  "middleNotes": [
+    "Calone",
+    "Jasmine",
+    "Rosemary",
+    "Persimmon"
+  ],
+  "baseNotes": [
+    "White Musk",
+    "Cedar",
+    "Patchouli",
+    "Amber"
+  ],
+  "longevity": "Moderate (4-6 hours)",
+  "sillage": "Moderate",
+  "occasions": [
+    "Daily Wear",
+    "Beach",
+    "Casual",
+    "Office",
+    "Summer Events"
+  ],
+  "seasons": [
+    "Spring",
+    "Summer"
+  ],
+  "priceRange": "$70 - $120",
+  "gender": "Men"
+}

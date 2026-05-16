@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.app.perfumeSnap",
+        "paths": [
+          "/perfumes/*",
+          "/blog/*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "TEAM_ID.app.perfumeSnap"
+    ]
+  }
+}

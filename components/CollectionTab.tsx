@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection, deleteFromCollection } from '../services/api';
+import { trackDeleteFromCollection, trackEvent } from '../services/analytics';
 
 const EDIT_ANIM_DURATION = 280;
 const CHECKBOX_ICON = 26;
@@ -156,6 +157,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
         text: 'Remove',
         style: 'destructive',
         onPress: async () => {
+          trackDeleteFromCollection(1);
           setItems((prev) => prev.filter((it) => it.id !== id));
           try { await deleteFromCollection(id); } catch { load(false); }
         },
@@ -200,6 +202,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           style: 'destructive',
           onPress: async () => {
             const ids = Array.from(selectedIds);
+            trackDeleteFromCollection(ids.length);
             animateLayout();
             setItems((prev) => prev.filter((it) => !selectedIds.has(it.id)));
             setSelectedIds(new Set());
@@ -347,6 +350,10 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
 
   const openCollectionDetail = useCallback((item: CollectionItem) => {
+    trackEvent('open_collection_item', {
+      perfume_name: item.perfume.name || '',
+      perfume_brand: item.perfume.brand || '',
+    });
     if (item.perfume.imageUri) {
       Image.prefetch(item.perfume.imageUri).catch(() => {});
     }

@@ -1,0 +1,43 @@
+---
+import StoreButtons from "./StoreButtons.astro";
+
+interface Props {
+  variant?: "hero" | "inline" | "banner";
+  heading?: string;
+  subheading?: string;
+}
+
+const { variant = "inline", heading, subheading } = Astro.props;
+---
+
+{variant === "banner" && (
+  <section id="download" class="bg-surface border-y border-border">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center">
+      <h2 class="text-3xl md:text-4xl font-bold text-foreground mb-4">
+        {heading ?? "Ready to identify any perfume?"}
+      </h2>
+      <p class="text-muted text-lg mb-10 max-w-xl mx-auto">
+        {subheading ?? "Download PerfumeSnap and unlock the world of fragrances with just a photo."}
+      </p>
+      <StoreButtons />
+    </div>
+  </section>
+)}
+
+{variant === "hero" && (
+  <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+    <StoreButtons />
+  </div>
+)}
+
+{variant === "inline" && (
+  <div class="rounded-2xl bg-surface-light border border-border p-8 text-center">
+    <h3 class="text-xl font-semibold text-foreground mb-2">
+      {heading ?? "Get the full experience in the app"}
+    </h3>
+    <p class="text-muted text-sm mb-6">
+      {subheading ?? "AI identification, price comparison, and your personal collection."}
+    </p>
+    <StoreButtons />
+  </div>
+)}

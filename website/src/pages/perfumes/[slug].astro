@@ -1,0 +1,183 @@
+---
+import Base from "@/layouts/Base.astro";
+import DownloadCTA from "@/components/DownloadCTA.astro";
+import StoreButtons from "@/components/StoreButtons.astro";
+import { getAllPerfumes, getPerfumeBySlug } from "@/lib/perfumes";
+import { perfumeJsonLd, breadcrumbJsonLd, faqJsonLd, type PerfumeData } from "@/lib/structured-data";
+import { SITE_URL } from "@/lib/seo";
+
+export function getStaticPaths() {
+  return getAllPerfumes().map((p) => ({ params: { slug: p.slug } }));
+}
+
+const { slug } = Astro.params;
+const perfume = getPerfumeBySlug(slug!)!;
+
+function buildFaqItems(p: PerfumeData) {
+  return [
+    { question: `What does ${p.name} by ${p.brand} smell like?`, answer: `${p.name} is a ${p.fragranceFamily.toLowerCase()} fragrance. It opens with ${p.topNotes.join(", ")} top notes, transitions into ${p.middleNotes.join(", ")} in the heart, and dries down to ${p.baseNotes.join(", ")}. ${p.description.split(".").slice(0, 2).join(".")}.` },
+    { question: `How long does ${p.name} last?`, answer: `${p.name} by ${p.brand} has ${p.longevity.toLowerCase()} longevity with ${p.sillage.toLowerCase()} sillage (projection). Performance can vary depending on skin type, climate, and application method. Download PerfumeSnap for detailed performance tips.` },
+    { question: `When should I wear ${p.name}?`, answer: `${p.name} is best suited for ${p.occasions.join(", ").toLowerCase()}. It works particularly well in ${p.seasons.join(", ").toLowerCase()}. It's a ${p.gender.toLowerCase()} fragrance classified as ${p.concentration.toLowerCase()}.` },
+    { question: `What are the notes in ${p.name}?`, answer: `The top notes are ${p.topNotes.join(", ")}. The middle (heart) notes are ${p.middleNotes.join(", ")}. The base notes are ${p.baseNotes.join(", ")}. Together they create a ${p.fragranceFamily.toLowerCase()} scent profile.` },
+    { question: `How much does ${p.name} cost?`, answer: p.priceRange ? `${p.name} by ${p.brand} typically retails for ${p.priceRange}. Prices vary by retailer and bottle size. Download PerfumeSnap to compare live prices from top retailers and find the best deal.` : `Pricing for ${p.name} varies by retailer and bottle size. Download PerfumeSnap to compare live prices and find the best deal.` },
+    { question: `Is there an app that can identify ${p.name} from a photo?`, answer: `Yes — PerfumeSnap uses AI to identify any perfume from a photo, including ${p.name} by ${p.brand}. Just snap a picture of the bottle and get the full fragrance profile, notes breakdown, price comparison, and similar scent recommendations instantly.` },
+  ];
+}
+
+const faqItems = buildFaqItems(perfume);
+const jsonLd = [
+  perfumeJsonLd(perfume),
+  breadcrumbJsonLd([
+    { name: "Home", href: "/" },
+    { name: "Perfumes", href: "/perfumes" },
+    { name: `${perfume.name} by ${perfume.brand}`, href: `/perfumes/${perfume.slug}` },
+  ]),
+  faqJsonLd(faqItems),
+];
+
+const description = `${perfume.name} by ${perfume.brand}: ${perfume.fragranceFamily} fragrance with ${perfume.topNotes.slice(0, 3).join(", ")} top notes. ${perfume.concentration}, ${perfume.longevity} longevity. ${perfume.description.slice(0, 120)}...`;
+---
+
+<Base
+  title={`${perfume.name} by ${perfume.brand} — Notes, Review & Price`}
+  description={description}
+  canonical={`${SITE_URL}/perfumes/${perfume.slug}`}
+  jsonLd={jsonLd}
+>
+  <div class="mx-auto max-w-3xl px-6 pt-8 md:pt-12 pb-12 md:pb-16">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-xs text-muted-dark mb-6">
+      <a href="/" class="hover:text-foreground transition-colors">Home</a>
+      <span>/</span>
+      <a href="/perfumes" class="hover:text-foreground transition-colors">Perfumes</a>
+      <span>/</span>
+      <span class="text-muted">{perfume.name}</span>
+    </nav>
+
+    <!-- Hero card -->
+    <div class="rounded-2xl border border-border bg-surface p-6 md:p-8 mb-10">
+      <div class="flex flex-col md:flex-row gap-6">
+        {perfume.image ? (
+          <div class="shrink-0">
+            <img src={perfume.image} alt={`${perfume.name} by ${perfume.brand}`} width="160" height="200" class="rounded-xl object-contain w-28 h-36 md:w-40 md:h-48" />
+          </div>
+        ) : (
+          <div class="w-28 h-36 md:w-40 md:h-48 rounded-xl bg-linear-to-br from-primary/15 to-accent/5 border border-primary/20 flex items-center justify-center shrink-0">
+            <span class="text-4xl md:text-5xl font-bold text-primary/60 select-none">{perfume.brand.charAt(0)}</span>
+          </div>
+        )}
+
+        <div class="flex-1 min-w-0">
+          <div class="flex flex-wrap items-center gap-2 mb-2">
+            <a href={`/perfumes/category/${perfume.fragranceFamily.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`} class="text-xs font-medium text-primary bg-primary/10 px-2.5 py-0.5 rounded-full hover:bg-primary/20 transition-colors">
+              {perfume.fragranceFamily}
+            </a>
+            <span class="text-xs text-muted-dark">{perfume.concentration}</span>
+            <span class="text-xs text-muted-dark">&middot;</span>
+            <span class="text-xs text-muted-dark">{perfume.gender}</span>
+          </div>
+          <h1 class="text-2xl md:text-4xl font-bold text-foreground tracking-tight">{perfume.name}</h1>
+          <p class="text-lg text-muted mt-1">by {perfume.brand}</p>
+          <p class="text-sm text-muted leading-relaxed mt-4">{perfume.description}</p>
+        </div>
+      </div>
+
+      <p class="text-[10px] text-muted-dark mt-5 pt-4 border-t border-border">
+        PerfumeSnap is not affiliated with or endorsed by {perfume.brand}. All trademarks and images are property of their respective owners.
+      </p>
+    </div>
+
+    <!-- Notes -->
+    <section class="mb-10">
+      <h2 class="text-lg font-semibold text-foreground mb-4">Fragrance Notes</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {[
+          { label: "Top", notes: perfume.topNotes },
+          { label: "Middle", notes: perfume.middleNotes },
+          { label: "Base", notes: perfume.baseNotes },
+        ].map((group) => (
+          <div class="rounded-xl bg-surface border border-border p-4">
+            <p class="text-xs text-muted-dark uppercase tracking-wider mb-2.5">{group.label}</p>
+            <div class="flex flex-wrap gap-1.5">
+              {group.notes.map((note) => (
+                <span class="text-sm text-foreground bg-surface-light px-2.5 py-1 rounded-lg">{note}</span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Locked section -->
+    <section class="relative mb-10">
+      <div class="rounded-2xl bg-surface border border-border p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-4 select-none" aria-hidden="true">
+          <div class="rounded-xl bg-surface-light p-4">
+            <p class="text-xs text-muted-dark uppercase tracking-wider mb-1">Longevity</p>
+            <p class="text-base font-medium text-foreground blur-[6px]">{perfume.longevity}</p>
+          </div>
+          <div class="rounded-xl bg-surface-light p-4">
+            <p class="text-xs text-muted-dark uppercase tracking-wider mb-1">Sillage</p>
+            <p class="text-base font-medium text-foreground blur-[6px]">{perfume.sillage}</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4 select-none" aria-hidden="true">
+          <div class="rounded-xl bg-surface-light p-4">
+            <p class="text-xs text-muted-dark uppercase tracking-wider mb-1">Price Range</p>
+            <p class="text-base font-medium text-foreground blur-[6px]">{perfume.priceRange || "$XX - $XXX"}</p>
+          </div>
+          <div class="rounded-xl bg-surface-light p-4">
+            <p class="text-xs text-muted-dark uppercase tracking-wider mb-1">Best Seasons</p>
+            <p class="text-base font-medium text-foreground blur-[6px]">{perfume.seasons.join(", ")}</p>
+          </div>
+        </div>
+        <div class="absolute inset-0 rounded-2xl flex items-center justify-center bg-surface/60 backdrop-blur-[2px]">
+          <div class="text-center px-6">
+            <p class="text-lg font-semibold text-foreground mb-1">Performance, prices & more</p>
+            <p class="text-sm text-muted mb-5">Get the full profile for {perfume.name} in the app</p>
+            <DownloadCTA variant="hero" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- What you get in the app -->
+    <section class="rounded-2xl bg-surface border border-border p-6 mb-10">
+      <h2 class="text-lg font-semibold text-foreground mb-4">What you get in the app</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {[
+          { icon: "📊", text: "Longevity & sillage ratings" },
+          { icon: "💰", text: "Live prices from top retailers" },
+          { icon: "🔍", text: "Similar fragrances to explore" },
+          { icon: "💬", text: "Ask our AI expert anything" },
+          { icon: "📷", text: "Identify any perfume from a photo" },
+          { icon: "📚", text: "Save to your personal collection" },
+        ].map((item) => (
+          <div class="flex items-center gap-3 text-sm text-muted">
+            <span class="text-lg">{item.icon}</span>
+            {item.text}
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="mb-10">
+      <h2 class="text-lg font-semibold text-foreground mb-4">Frequently Asked Questions</h2>
+      <div class="space-y-3">
+        {faqItems.map((item) => (
+          <details class="group rounded-xl bg-surface border border-border p-4">
+            <summary class="flex items-center justify-between cursor-pointer list-none text-sm text-foreground font-medium">
+              {item.question}
+              <svg class="w-4 h-4 text-muted-dark shrink-0 ml-3 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <p class="mt-3 text-sm text-muted leading-relaxed">{item.answer}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <!-- Final CTA -->
+    <DownloadCTA variant="banner" heading={`Get everything on ${perfume.name}`} subheading="Prices, performance, similar scents, and AI expert chat — all free in the app." />
+  </div>
+</Base>

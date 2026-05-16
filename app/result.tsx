@@ -39,6 +39,18 @@ import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfum
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
+import {
+  trackScreenView,
+  trackIdentifyStarted,
+  trackIdentifySuccess,
+  trackIdentifyFailed,
+  trackLookupStarted,
+  trackLookupSuccess,
+  trackRetailerTap,
+  trackSaveToCollection,
+  trackViewSimilar,
+  trackChatOpened,
+} from '../services/analytics';
 
 const BADGE_MAP: Record<string, string> = { amazon: 'Amazon', ebay: 'eBay', walmart: 'Walmart' };
 
@@ -159,7 +171,10 @@ function SimilarCardSmall({ perfume }: { perfume: SimilarPerfume }) {
     <TouchableOpacity
       style={styles.similarCard}
       activeOpacity={0.85}
-      onPress={() => WebBrowser.openBrowserAsync(directUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET })}
+      onPress={() => {
+        trackRetailerTap(perfume.retailer || 'unknown', `${perfume.brand || ''} ${perfume.name || ''}`.trim());
+        WebBrowser.openBrowserAsync(directUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET });
+      }}
     >
       <View style={styles.similarImageWrap}>
         {!hasImage && (
@@ -413,6 +428,7 @@ export default function ResultScreen() {
 
   const openAllSimilar = useCallback(() => {
     if (!result) return;
+    trackViewSimilar(result.name);
     router.push({
       pathname: '/similar',
       params: { name: result.name, brand: result.brand },
@@ -420,6 +436,7 @@ export default function ResultScreen() {
   }, [result]);
   const openPerfumeChat = useCallback(() => {
     if (!result) return;
+    trackChatOpened(`${result.brand} ${result.name}`);
     const perfumeForChat = {
       name: result.name,
       brand: result.brand,
@@ -747,6 +764,7 @@ export default function ResultScreen() {
 
   const showError = useCallback((msg: string) => {
     if (stepInterval.current) clearInterval(stepInterval.current);
+    trackIdentifyFailed(msg);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     setError(formatError(msg));
     setLoading(false);
@@ -754,6 +772,7 @@ export default function ResultScreen() {
 
   const showSuccess = useCallback((perfume: PerfumeResult, preloadedSimilar?: SimilarPerfume[], similarResolved = false) => {
     setResult(perfume);
+    trackIdentifySuccess(perfume.name, perfume.brand);
     if (preloadedSimilar) setSimilarListings(preloadedSimilar);
     setSimilarResolvedOnProcess(similarResolved);
     setSimilarLoading(false);
@@ -781,6 +800,7 @@ export default function ResultScreen() {
 
   const identify = useCallback(async () => {
     if (!imageUri) return;
+    trackIdentifyStarted();
     setError(null);
     setLoading(true);
     setCurrentStep(0);
@@ -804,6 +824,7 @@ export default function ResultScreen() {
 
   const doLookup = useCallback(async () => {
     if (!lookupName) return;
+    trackLookupStarted(lookupName);
     setError(null);
     setLoading(true);
     setCurrentStep(0);
@@ -825,6 +846,7 @@ export default function ResultScreen() {
   }, [lookupName, lookupBrand, showError, startStepAnimation]);
 
   useEffect(() => {
+    trackScreenView(isLookupMode ? 'result_lookup' : fromCollection === '1' ? 'result_collection' : 'result_scan');
     if (collectionPerfume) return;
     if (isLookupMode) {
       doLookup();
@@ -883,6 +905,7 @@ export default function ResultScreen() {
     }
     setSavedToCollection(true);
     setSaving(false);
+    trackSaveToCollection(result.name, result.brand);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 

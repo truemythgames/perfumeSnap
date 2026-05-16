@@ -1,0 +1,41 @@
+{
+  "name": "Bleu de Chanel",
+  "brand": "Chanel",
+  "slug": "chanel-bleu-de-chanel",
+  "description": "Bleu de Chanel is a woody aromatic fragrance for men that embodies freedom and determination. Created by Jacques Polge and launched in 2010, it has become a pillar of modern masculine perfumery. The scent effortlessly transitions from boardroom to evening, making it one of the most versatile designer fragrances available.",
+  "fragranceFamily": "Woody Aromatic",
+  "concentration": "Eau de Parfum",
+  "topNotes": [
+    "Grapefruit",
+    "Lemon",
+    "Mint"
+  ],
+  "middleNotes": [
+    "Ginger",
+    "Nutmeg",
+    "Jasmine",
+    "Iso E Super"
+  ],
+  "baseNotes": [
+    "Incense",
+    "Vetiver",
+    "Cedar",
+    "Sandalwood",
+    "Patchouli"
+  ],
+  "longevity": "Long-lasting (8-12 hours)",
+  "sillage": "Moderate to Strong",
+  "occasions": [
+    "Office",
+    "Formal Events",
+    "Date Night",
+    "Daily Wear"
+  ],
+  "seasons": [
+    "Spring",
+    "Fall",
+    "Winter"
+  ],
+  "priceRange": "$100 - $180",
+  "gender": "Men"
+}
