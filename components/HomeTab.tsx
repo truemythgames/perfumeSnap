@@ -280,35 +280,7 @@ export default function HomeTab() {
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Quick features row */}
-      <View style={styles.features}>
-        {[
-          { icon: '🔍', label: 'AI Identification' },
-          { icon: '🌿', label: 'Note Breakdown' },
-          { icon: '💰', label: 'Price Estimates' },
-        ].map((f, i) => (
-          <View key={i} style={styles.featureItem}>
-            <Text style={styles.featureIcon}>{f.icon}</Text>
-            <Text style={styles.featureLabel}>{f.label}</Text>
-          </View>
-        ))}
-      </View>
-
       <View style={styles.footer}>
-        <View style={styles.footerLogoWrap}>
-          <LinearGradient
-            colors={['rgba(212,164,74,0.38)', 'rgba(160,114,48,0.18)', 'rgba(22,18,16,0.95)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.footerLogoGradient}
-          >
-            <Image
-              source={require('../assets/logo.png')}
-              style={styles.footerLogo}
-              resizeMode="cover"
-            />
-          </LinearGradient>
-        </View>
         <View style={styles.footerLine} />
         <Text style={styles.footerText}>PerfumeSnap</Text>
       </View>
@@ -471,56 +443,10 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
 
-  features: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: Spacing.xxl,
-    paddingHorizontal: Spacing.lg,
-  },
-  featureItem: {
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  featureIcon: {
-    fontSize: 24,
-  },
-  featureLabel: {
-    fontSize: FontSizes.xs,
-    color: Colors.textMuted,
-    textAlign: 'center',
-  },
-
   footer: {
     alignItems: 'center',
     marginTop: Spacing.xxl,
     gap: Spacing.sm,
-  },
-  footerLogoWrap: {
-    borderRadius: 18,
-    padding: 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.28,
-        shadowRadius: 16,
-      },
-      android: { elevation: 8 },
-    }),
-  },
-  footerLogoGradient: {
-    width: 76,
-    height: 76,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  footerLogo: {
-    width: 68,
-    height: 68,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(212,164,74,0.35)',
   },
   footerLine: {
     width: 40,

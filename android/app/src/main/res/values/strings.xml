@@ -1,0 +1,8 @@
+<resources>
+  <string name="app_name">PerfumeSnap</string>
+  <string name="facebook_app_id">1011428581572828</string>
+  <string name="facebook_client_token">702519f05ddd1a5b9ce7956ccc2c9b17</string>
+  <string name="fb_login_protocol_scheme">fb1011428581572828</string>
+  <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
+  <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+</resources>

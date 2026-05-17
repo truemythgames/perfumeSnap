@@ -4,18 +4,27 @@ import { StatusBar } from 'expo-status-bar';
 import { Colors } from '../constants/theme';
 import { initCrashlytics, logError } from '../utils/crashlytics';
 import { initFacebookSDK } from '../services/analytics';
-import { ErrorUtils } from 'react-native';
+import analytics from '@react-native-firebase/analytics';
+
+const globalErrorHandler = (error: Error, isFatal?: boolean) => {
+  logError(error, isFatal ? 'Fatal JS error' : 'Non-fatal JS error');
+};
+
+const errorUtils = (global as any).ErrorUtils;
+if (errorUtils) {
+  const defaultHandler = errorUtils.getGlobalHandler();
+  errorUtils.setGlobalHandler((error: Error, isFatal: boolean) => {
+    globalErrorHandler(error, isFatal);
+    defaultHandler?.(error, isFatal);
+  });
+}
 
 export default function RootLayout() {
   useEffect(() => {
     initCrashlytics();
     initFacebookSDK();
-
-    const defaultHandler = ErrorUtils.getGlobalHandler();
-    ErrorUtils.setGlobalHandler((error, isFatal) => {
-      logError(error, isFatal ? 'Fatal JS error' : 'Non-fatal JS error');
-      defaultHandler?.(error, isFatal);
-    });
+    analytics().setAnalyticsCollectionEnabled(true);
+    analytics().logEvent('app_open');
   }, []);
 
   return (
