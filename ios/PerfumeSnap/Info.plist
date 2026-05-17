@@ -41,13 +41,13 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>FacebookAdvertiserIDCollectionEnabled</key>
-    <false/>
+    <true/>
     <key>FacebookAppID</key>
     <string>1011428581572828</string>
     <key>FacebookAutoInitEnabled</key>
     <true/>
     <key>FacebookAutoLogAppEventsEnabled</key>
-    <false/>
+    <true/>
     <key>FacebookClientToken</key>
     <string>702519f05ddd1a5b9ce7956ccc2c9b17</string>
     <key>FacebookDisplayName</key>

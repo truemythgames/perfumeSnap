@@ -93,8 +93,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         clientToken: FB_CLIENT_TOKEN,
         displayName: 'PerfumeSnap',
         scheme: `fb${FB_APP_ID}`,
-        advertiserIDCollectionEnabled: false,
-        autoLogAppEventsEnabled: false,
+        advertiserIDCollectionEnabled: true,
+        autoLogAppEventsEnabled: true,
         isAutoInitEnabled: true,
         iosUserTrackingPermission:
           'This identifier will be used to deliver personalized ads to you.',
