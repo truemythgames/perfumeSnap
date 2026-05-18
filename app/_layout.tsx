@@ -101,6 +101,13 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="search"
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 250,
+          }}
+        />
+        <Stack.Screen
           name="history"
           options={{
             animation: 'slide_from_right',

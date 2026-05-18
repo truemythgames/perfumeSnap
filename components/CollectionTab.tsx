@@ -525,7 +525,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           <Animated.View style={[StyleSheet.absoluteFill, styles.iconBarFill, heroBlurStyle]} pointerEvents="none" />
           <View style={styles.headerIcons}>
             {items.length > 0 && (
-              <TouchableOpacity hitSlop={8}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
+              <TouchableOpacity hitSlop={8} onPress={() => router.push('/search')}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
             )}
             {items.length > 0 && (
               <TouchableOpacity hitSlop={8}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
