@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { trackPhotoTaken, trackGalleryPick, trackScreenView } from '../services/analytics';
+import { consumeScanIfNeeded, FREE_LIMITS, getScanAllowance } from '../services/access';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_HORIZONTAL_PADDING = 20;
@@ -119,6 +120,18 @@ export default function CameraScreen() {
 
   const takePicture = async () => {
     if (!cameraRef.current || capturing) return;
+    const allowance = await getScanAllowance();
+    if (!allowance.allowed) {
+      Alert.alert(
+        'Daily Scan Limit Reached',
+        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Unlock', onPress: () => router.push('/sales') },
+        ],
+      );
+      return;
+    }
     setCapturing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
@@ -129,6 +142,7 @@ export default function CameraScreen() {
         shutterSound: false,
       });
       if (photo?.uri) {
+        await consumeScanIfNeeded();
         trackPhotoTaken();
         router.replace({
           pathname: '/result',
@@ -144,6 +158,18 @@ export default function CameraScreen() {
 
   const pickFromLibrary = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const allowance = await getScanAllowance();
+    if (!allowance.allowed) {
+      Alert.alert(
+        'Daily Scan Limit Reached',
+        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Unlock', onPress: () => router.push('/sales') },
+        ],
+      );
+      return;
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert(
@@ -162,6 +188,7 @@ export default function CameraScreen() {
     });
 
     if (!result.canceled && result.assets[0]?.base64) {
+      await consumeScanIfNeeded();
       trackGalleryPick();
       router.replace({
         pathname: '/result',

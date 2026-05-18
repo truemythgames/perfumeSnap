@@ -28,6 +28,7 @@ import Animated, {
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection, deleteFromCollection } from '../services/api';
 import { trackDeleteFromCollection, trackEvent } from '../services/analytics';
+import { FREE_LIMITS, getPremiumStatus } from '../services/access';
 
 const EDIT_ANIM_DURATION = 280;
 const CHECKBOX_ICON = 26;
@@ -111,6 +112,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
 
   const load = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
@@ -142,6 +144,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   }, [nextCursor, loadingMore]);
 
   useEffect(() => { load(true); }, [load]);
+  useEffect(() => { getPremiumStatus().then(setIsPremium); }, []);
 
   useFocusEffect(useCallback(() => { load(false); }, [load]));
 
@@ -335,6 +338,16 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           <Text style={styles.statLabel}>Brands</Text>
         </View>
       </View>
+      {!isPremium ? (
+        <View style={styles.limitBanner}>
+          <Text style={styles.limitBannerText}>
+            Free collection: {stats.count}/{FREE_LIMITS.collection}
+          </Text>
+          <TouchableOpacity onPress={() => router.push('/sales')} style={styles.limitBannerBtn}>
+            <Text style={styles.limitBannerBtnText}>Unlock</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -462,6 +475,14 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
             <Text style={styles.emptyText}>
               Snap a photo of a perfume bottle to start{'\n'}building your collection
             </Text>
+            <TouchableOpacity
+              style={styles.emptyButton}
+              activeOpacity={0.85}
+              onPress={() => router.push('/camera')}
+            >
+              <Ionicons name="scan" size={18} color="#fff" />
+              <Text style={styles.emptyButtonText}>Snap a Perfume</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
@@ -600,6 +621,34 @@ const styles = StyleSheet.create({
     width: 1,
     height: 36,
     backgroundColor: Colors.border,
+  },
+  limitBanner: {
+    marginTop: Spacing.md,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: 'rgba(200,148,60,0.35)',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  limitBannerText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+  },
+  limitBannerBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+  },
+  limitBannerBtnText: {
+    color: '#fff',
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
   },
   sectionDivider: {
     height: StyleSheet.hairlineWidth,
@@ -781,6 +830,21 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
+    marginTop: Spacing.lg,
+  },
+  emptyButtonText: {
+    color: '#fff',
+    fontSize: FontSizes.md,
+    fontWeight: '700',
   },
   errorTitle: {
     fontSize: FontSizes.lg,

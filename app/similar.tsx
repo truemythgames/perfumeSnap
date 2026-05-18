@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SimilarPerfume, getSimilarListings, buildShoppingUrl } from '../services/api';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { trackScreenView, trackRetailerTap } from '../services/analytics';
+import { getPremiumStatus } from '../services/access';
 
 const BADGE_MAP: Record<string, string> = { amazon: 'Amazon', ebay: 'eBay', walmart: 'Walmart' };
 
@@ -88,9 +89,21 @@ export default function SimilarScreen() {
 
   const [perfumes, setPerfumes] = useState<SimilarPerfume[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
+  const [premiumChecked, setPremiumChecked] = useState(false);
 
   useEffect(() => {
     trackScreenView('similar');
+    getPremiumStatus().then(setIsPremium).finally(() => setPremiumChecked(true));
+  }, []);
+
+  useEffect(() => {
+    if (!premiumChecked) return;
+    if (!isPremium) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     const name = params.name;
     const brand = params.brand || '';
 
@@ -103,7 +116,7 @@ export default function SimilarScreen() {
       setPerfumes(results);
       setLoading(false);
     });
-  }, [params.name, params.brand]);
+  }, [params.name, params.brand, premiumChecked, isPremium]);
 
   const left: SimilarPerfume[] = [];
   const right: SimilarPerfume[] = [];
@@ -121,6 +134,17 @@ export default function SimilarScreen() {
       {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={Colors.text} />
+        </View>
+      ) : premiumChecked && !isPremium ? (
+        <View style={styles.lockedWrap}>
+          <Ionicons name="lock-closed-outline" size={34} color={Colors.primary} />
+          <Text style={styles.lockedTitle}>Similar Perfumes is Premium</Text>
+          <Text style={styles.lockedText}>
+            Unlock premium to browse similar fragrances and direct listings.
+          </Text>
+          <TouchableOpacity style={styles.unlockButton} onPress={() => router.push('/sales')}>
+            <Text style={styles.unlockButtonText}>Unlock Premium</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -227,5 +251,35 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  lockedWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  lockedTitle: {
+    color: Colors.text,
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  lockedText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    textAlign: 'center',
+  },
+  unlockButton: {
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  unlockButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: FontSizes.sm,
   },
 });

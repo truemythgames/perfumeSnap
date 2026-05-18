@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BorderRadius, Colors, FontSizes, Spacing } from '../constants/theme';
 import { chatAboutPerfume, PerfumeChatMessage, PerfumeResult } from '../services/api';
 import { trackScreenView, trackChatMessageSent } from '../services/analytics';
+import { getPremiumStatus } from '../services/access';
 
 type ChatRow = {
   id: string;
@@ -30,6 +31,8 @@ export default function PerfumeChatScreen() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
+  const [premiumChecked, setPremiumChecked] = useState(false);
 
   const perfume = useMemo<PerfumeResult | null>(() => {
     if (!params.perfume || Array.isArray(params.perfume)) return null;
@@ -55,6 +58,7 @@ export default function PerfumeChatScreen() {
 
   useEffect(() => {
     trackScreenView('perfume_chat');
+    getPremiumStatus().then(setIsPremium).finally(() => setPremiumChecked(true));
   }, []);
 
   const canSend = Boolean(input.trim()) && !sending && Boolean(perfume);
@@ -115,6 +119,19 @@ export default function PerfumeChatScreen() {
         behavior={Platform.select({ ios: 'padding', android: undefined })}
         keyboardVerticalOffset={Platform.select({ ios: 10, android: 0 })}
       >
+        {premiumChecked && !isPremium ? (
+          <View style={styles.lockedWrap}>
+            <Ionicons name="lock-closed-outline" size={34} color={Colors.primary} />
+            <Text style={styles.lockedTitle}>AI Chat is Premium</Text>
+            <Text style={styles.lockedText}>
+              Unlock premium to ask unlimited questions about this perfume.
+            </Text>
+            <TouchableOpacity style={styles.unlockButton} onPress={() => router.push('/sales')}>
+              <Text style={styles.unlockButtonText}>Unlock Premium</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
         <ScrollView
           ref={scrollRef}
           style={styles.chat}
@@ -166,6 +183,8 @@ export default function PerfumeChatScreen() {
             <Ionicons name="send" size={18} color="#fff" />
           </TouchableOpacity>
         </View>
+          </>
+        )}
       </KeyboardAvoidingView>
     </View>
   );
@@ -293,5 +312,35 @@ const styles = StyleSheet.create({
     color: '#ff8f8f',
     fontSize: FontSizes.sm,
     alignSelf: 'center',
+  },
+  lockedWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  lockedTitle: {
+    color: Colors.text,
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  lockedText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    textAlign: 'center',
+  },
+  unlockButton: {
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  unlockButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: FontSizes.sm,
   },
 });

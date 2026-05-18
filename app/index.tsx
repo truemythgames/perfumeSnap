@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Platform,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +27,7 @@ import HomeTab from '../components/HomeTab';
 import CollectionTab, { CollectionTabHandle } from '../components/CollectionTab';
 import { Colors, Spacing, FontSizes } from '../constants/theme';
 import { trackCameraOpened, trackTabSwitch } from '../services/analytics';
+import { FREE_LIMITS, getScanAllowance } from '../services/access';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAMERA_BTN_SIZE = 70;
@@ -142,6 +144,18 @@ export default function MainScreen() {
 
   const handleCamera = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const allowance = await getScanAllowance();
+    if (!allowance.allowed) {
+      Alert.alert(
+        'Daily Scan Limit Reached',
+        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Unlock', onPress: () => router.push('/sales') },
+        ],
+      );
+      return;
+    }
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return;
     trackCameraOpened();

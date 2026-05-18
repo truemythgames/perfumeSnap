@@ -28,55 +28,15 @@ import Animated, {
 import { isApiConfigured } from '../services/api';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { trackCameraOpened } from '../services/analytics';
+import { FREE_LIMITS, getScanAllowance } from '../services/access';
+import { useArticles } from '../hooks/useArticles';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const ARTICLES = [
-  {
-    id: '1',
-    title: 'Fragrance Families Explained',
-    subtitle: 'Floral, Oriental, Woody & Fresh',
-    icon: 'flower-outline' as const,
-    color: '#c8943c',
-    bgColor: '#c8943c18',
-  },
-  {
-    id: '2',
-    title: 'Understanding Perfume Notes',
-    subtitle: 'Top, heart & base notes decoded',
-    icon: 'musical-notes-outline' as const,
-    color: '#b87a3a',
-    bgColor: '#b87a3a18',
-  },
-  {
-    id: '3',
-    title: 'How to Apply Perfume',
-    subtitle: 'Pulse points & lasting tips',
-    icon: 'water-outline' as const,
-    color: '#d4a44a',
-    bgColor: '#d4a44a18',
-  },
-  {
-    id: '4',
-    title: 'EDP vs EDT vs Cologne',
-    subtitle: 'Concentration & longevity guide',
-    icon: 'flask-outline' as const,
-    color: '#a07230',
-    bgColor: '#a0723018',
-  },
-  {
-    id: '5',
-    title: 'Storing Your Fragrances',
-    subtitle: 'Keep your scents fresh for years',
-    icon: 'cube-outline' as const,
-    color: '#c4884a',
-    bgColor: '#c4884a18',
-  },
-];
 
 export default function HomeTab() {
   const apiReady = isApiConfigured();
   const insets = useSafeAreaInsets();
+  const { articles } = useArticles();
 
   const heroScale = useSharedValue(1.3);
   const heroOpacity = useSharedValue(0);
@@ -156,6 +116,18 @@ export default function HomeTab() {
 
   const handleCamera = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const allowance = await getScanAllowance();
+    if (!allowance.allowed) {
+      Alert.alert(
+        'Daily Scan Limit Reached',
+        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Unlock', onPress: () => router.push('/sales') },
+        ],
+      );
+      return;
+    }
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert(
@@ -166,6 +138,10 @@ export default function HomeTab() {
     }
     trackCameraOpened();
     router.push('/camera');
+  };
+
+  const openArticle = (id: string) => {
+    router.push({ pathname: '/article', params: { id } });
   };
 
   return (
@@ -211,7 +187,7 @@ export default function HomeTab() {
             <View style={styles.identifyTextBlock}>
               <Text style={styles.identifyTitle}>Identify Perfume</Text>
               <Text style={styles.identifyDesc}>
-                Take a photo or use your camera
+                Snap any bottle, get the full profile
               </Text>
             </View>
             <Ionicons
@@ -241,24 +217,33 @@ export default function HomeTab() {
           </Text>
         </View>
 
-        {ARTICLES.slice(0, 2).map((article, index) => (
+        {articles.slice(0, 2).map((article, index) => (
           <Animated.View key={article.id} style={makeArticleStyle(index)}>
             <TouchableOpacity
               style={styles.articleCard}
               activeOpacity={0.7}
+              onPress={() => openArticle(article.id)}
             >
-              <View
-                style={[
-                  styles.articleIcon,
-                  { backgroundColor: article.bgColor },
-                ]}
-              >
-                <Ionicons
-                  name={article.icon}
-                  size={22}
-                  color={article.color}
+              {article.imageUrl ? (
+                <Image
+                  source={{ uri: article.imageUrl }}
+                  style={styles.articleThumb}
+                  resizeMode="cover"
                 />
-              </View>
+              ) : (
+                <View
+                  style={[
+                    styles.articleIcon,
+                    { backgroundColor: article.color + '18' },
+                  ]}
+                >
+                  <Ionicons
+                    name={article.icon as any}
+                    size={22}
+                    color={article.color}
+                  />
+                </View>
+              )}
               <View style={styles.articleText}>
                 <Text style={styles.articleTitle}>{article.title}</Text>
                 <Text style={styles.articleSubtitle}>
@@ -274,7 +259,11 @@ export default function HomeTab() {
           </Animated.View>
         ))}
 
-        <TouchableOpacity style={styles.readMore} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.readMore}
+          activeOpacity={0.7}
+          onPress={() => router.push('/articles')}
+        >
           <Text style={styles.readMoreText}>Read more</Text>
           <Ionicons name="arrow-forward" size={16} color={Colors.primary} />
         </TouchableOpacity>
@@ -285,7 +274,7 @@ export default function HomeTab() {
         <Text style={styles.footerText}>PerfumeSnap</Text>
       </View>
 
-      <View style={{ height: 100 }} />
+      <View style={{ height: 30 }} />
     </ScrollView>
   );
 }
@@ -414,6 +403,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  articleThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
   },
   articleText: {
     flex: 1,

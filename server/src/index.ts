@@ -4,6 +4,272 @@ interface Env {
   IMAGES: R2Bucket;
   SERPAPI_KEY?: string;
   PRICES_API_KEY?: string;
+  REPLICATE_API_KEY?: string;
+}
+
+// ----------------------------- Articles Data -----------------------------
+
+interface ArticleSection {
+  type: 'paragraph' | 'heading' | 'subheading' | 'list';
+  text?: string;
+  items?: string[];
+}
+
+interface Article {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  tags: string[];
+  icon: string;
+  color: string;
+  readingTime: number;
+  sections: ArticleSection[];
+  imageKey?: string;
+}
+
+const ARTICLES: Article[] = [
+  {
+    id: '1',
+    slug: 'fragrance-families-explained',
+    title: 'Fragrance Families Explained',
+    subtitle: 'Floral, Oriental, Woody & Fresh',
+    description: 'Discover the four main fragrance families and learn which scent profiles match your personality and style.',
+    tags: ['Basics', 'Guide'],
+    icon: 'flower-outline',
+    color: '#c8943c',
+    readingTime: 4,
+    imageKey: 'articles/fragrance-families-explained.webp',
+    sections: [
+      { type: 'heading', text: 'What Are Fragrance Families?' },
+      { type: 'paragraph', text: 'Every perfume belongs to a fragrance family — a classification system that groups scents by their dominant characteristics. Understanding these families is the single most useful shortcut to finding perfumes you\'ll love without blind-buying bottles you\'ll regret.' },
+      { type: 'paragraph', text: 'The modern classification uses four main families, each with distinct sub-groups. Once you know which family resonates with you, narrowing down from thousands of perfumes to a shortlist becomes effortless.' },
+      { type: 'heading', text: 'Floral' },
+      { type: 'paragraph', text: 'The largest and most classic family. Built around flower notes — rose, jasmine, lily, peony, iris, and orange blossom. Floral perfumes range from soft and powdery (like Chanel No. 5) to lush and intoxicating (like Tom Ford Jasmin Rouge). If you love the scent of fresh bouquets or garden walks, this is your territory.' },
+      { type: 'heading', text: 'Oriental (Amber)' },
+      { type: 'paragraph', text: 'Warm, sensual, and enveloping. Think vanilla, amber, incense, spices like cinnamon and cardamom, and exotic resins. Oriental fragrances are evening and cold-weather favourites. Iconic examples include Yves Saint Laurent Opium and Dior Hypnotic Poison.' },
+      { type: 'heading', text: 'Woody' },
+      { type: 'paragraph', text: 'Grounded, earthy, and sophisticated. Sandalwood, cedar, vetiver, oud, and patchouli anchor this family. Woody fragrances project quiet confidence and work beautifully in professional settings. Think Terre d\'Hermès or Le Labo Santal 33.' },
+      { type: 'heading', text: 'Fresh' },
+      { type: 'paragraph', text: 'Bright, clean, and energizing. This family includes citrus (lemon, bergamot, grapefruit), aquatic (ocean, rain), green (cut grass, leaves), and aromatic (lavender, herbs) sub-groups. Perfect for daytime, hot weather, and active lifestyles. Acqua di Giò and Light Blue are quintessential fresh fragrances.' },
+      { type: 'heading', text: 'Finding Your Family' },
+      { type: 'paragraph', text: 'Most people are naturally drawn to one or two families. Pay attention to what you reach for instinctively — do you gravitate toward clean and citrusy, or warm and spicy? Your preference often reflects your personality: fresh lovers tend to be active and outdoorsy, while oriental fans often prefer cozy, intimate settings.' },
+      { type: 'list', items: ['Try one perfume from each family to discover your preference', 'Visit a department store and smell fragrances grouped by family', 'Note which scents you keep thinking about hours later — that\'s your family'] },
+    ],
+  },
+  {
+    id: '2',
+    slug: 'understanding-perfume-notes',
+    title: 'Understanding Perfume Notes',
+    subtitle: 'Top, heart & base notes decoded',
+    description: 'Learn how perfumes evolve over time through their three-layer notes pyramid and why first impressions can be misleading.',
+    tags: ['Basics', 'Education'],
+    icon: 'musical-notes-outline',
+    color: '#b87a3a',
+    readingTime: 4,
+    imageKey: 'articles/understanding-perfume-notes.webp',
+    sections: [
+      { type: 'heading', text: 'The Fragrance Pyramid' },
+      { type: 'paragraph', text: 'A perfume isn\'t a single smell — it\'s a carefully orchestrated evolution. When you spray a fragrance, it unfolds in three distinct phases called notes. Understanding this structure is essential because the scent you smell in the first minute is completely different from what lingers six hours later.' },
+      { type: 'heading', text: 'Top Notes (0–30 minutes)' },
+      { type: 'paragraph', text: 'The opening act. Top notes are the first thing you smell and they create the initial impression. They\'re typically light, bright, and volatile — citrus fruits (bergamot, lemon), herbs (basil, mint), and light fruits (apple, pear). They fade within 15–30 minutes.' },
+      { type: 'paragraph', text: 'This is why you should never judge a perfume from a quick spray in the store. The top notes are designed to grab attention, but they\'re not what you\'ll actually smell most of the day.' },
+      { type: 'heading', text: 'Heart Notes (30 min – 4 hours)' },
+      { type: 'paragraph', text: 'The core character. Heart notes (also called middle notes) emerge as top notes fade and form the main body of the fragrance. Expect florals (rose, jasmine, ylang-ylang), spices (cinnamon, nutmeg), and richer fruits. This is what the perfume is "really about."' },
+      { type: 'heading', text: 'Base Notes (4+ hours)' },
+      { type: 'paragraph', text: 'The foundation. Base notes are the heaviest, longest-lasting molecules. They anchor the entire composition and linger on skin (and clothes) for hours. Vanilla, musk, sandalwood, amber, cedar, and patchouli are classic base notes. They also influence how the heart notes smell by blending with them.' },
+      { type: 'heading', text: 'The Practical Takeaway' },
+      { type: 'list', items: ['Always test a perfume for at least 30–60 minutes before deciding', 'Spray on skin, not paper — your body chemistry changes the scent', 'The dry-down (base notes) is what people around you will actually smell', 'If you love the opening but hate the dry-down, the perfume isn\'t for you'] },
+    ],
+  },
+  {
+    id: '3',
+    slug: 'how-to-apply-perfume',
+    title: 'How to Apply Perfume Properly',
+    subtitle: 'Pulse points, mistakes & pro tips',
+    description: 'Most people apply perfume wrong. Learn the techniques fragrance experts use to make scent last all day.',
+    tags: ['Tips', 'How To'],
+    icon: 'water-outline',
+    color: '#d4a44a',
+    readingTime: 5,
+    imageKey: 'articles/how-to-apply-perfume.webp',
+    sections: [
+      { type: 'heading', text: 'Why Application Matters' },
+      { type: 'paragraph', text: 'You could own the best perfume in the world and still get disappointing performance from it if you apply it wrong. Proper application can easily double your fragrance\'s longevity and projection.' },
+      { type: 'heading', text: 'The Pulse Point Strategy' },
+      { type: 'paragraph', text: 'Pulse points are areas where blood vessels sit close to the skin surface, generating warmth that helps diffuse fragrance. The best pulse points are: inner wrists, sides of the neck, behind the ears, inner elbows, and behind the knees.' },
+      { type: 'paragraph', text: 'Don\'t hit all of them — pick 2–3 spots. Over-applying is the number one mistake. Two to four sprays of an Eau de Parfum is plenty for most situations.' },
+      { type: 'heading', text: 'Common Mistakes' },
+      { type: 'list', items: [
+        'Rubbing wrists together — this crushes the top notes through friction and heat',
+        'Spraying into the air and walking through — wastes 90% of the fragrance, most falls to the floor',
+        'Applying to dry skin — unscented moisturizer first creates a base that holds scent longer',
+        'Storing in the bathroom — heat and humidity break down fragrance molecules',
+        'Spraying on clothes only — fabric holds scent differently and can stain',
+      ] },
+      { type: 'heading', text: 'Pro Techniques' },
+      { type: 'paragraph', text: 'Apply right after a shower when your skin is clean and pores are open. Layer with matching or unscented body lotion first. For maximum longevity, a tiny dab of Vaseline on pulse points before spraying creates a "scent lock" that slows evaporation significantly.' },
+      { type: 'paragraph', text: 'Spray your hair (from a distance) or clothes for a lingering scent trail. Hair moves and disperses fragrance beautifully. For clothes, spray from 8–10 inches away onto natural fabrics.' },
+    ],
+  },
+  {
+    id: '4',
+    slug: 'edt-vs-edp-explained',
+    title: 'EDT vs EDP: Which to Choose?',
+    subtitle: 'Concentration & longevity guide',
+    description: 'The difference between Eau de Toilette and Eau de Parfum is more than just price. Learn what each concentration means for your experience.',
+    tags: ['Guide', 'Basics'],
+    icon: 'flask-outline',
+    color: '#a07230',
+    readingTime: 4,
+    imageKey: 'articles/edt-vs-edp-explained.webp',
+    sections: [
+      { type: 'heading', text: 'Concentration Matters' },
+      { type: 'paragraph', text: 'When you see EDT, EDP, or Parfum on a bottle, these aren\'t just labels — they tell you the percentage of fragrance oil dissolved in alcohol. More oil means stronger scent, longer wear, and usually a higher price.' },
+      { type: 'heading', text: 'The Concentration Ladder' },
+      { type: 'list', items: [
+        'Eau de Cologne (2–4% oil): Light, refreshing, lasts 2–3 hours',
+        'Eau de Toilette (5–15% oil): Everyday wear, lasts 4–6 hours',
+        'Eau de Parfum (15–20% oil): Rich, versatile, lasts 6–8 hours',
+        'Parfum / Extrait (20–30% oil): Intense, intimate, lasts 10–12+ hours',
+      ] },
+      { type: 'heading', text: 'Same Name, Different Scent' },
+      { type: 'paragraph', text: 'Here\'s what most people don\'t realize: the EDT and EDP of the same fragrance are often not the same composition. Brands frequently adjust the formula — the EDP version of Dior Sauvage has more vanilla and less pepper than the EDT. Bleu de Chanel EDP adds incense and sandalwood that the EDT doesn\'t have.' },
+      { type: 'paragraph', text: 'So it\'s not simply "the same thing but stronger." They can be genuinely different fragrances sharing a name.' },
+      { type: 'heading', text: 'How to Choose' },
+      { type: 'paragraph', text: 'Choose EDT if you prefer lighter scents, work in shared spaces, live in a hot climate, or enjoy reapplying. Choose EDP if you want all-day performance, prefer richer scent profiles, or hate reapplying. Choose Extrait for special occasions or when you want maximum impact with minimal sprays.' },
+    ],
+  },
+  {
+    id: '5',
+    slug: 'storing-your-fragrances',
+    title: 'How to Store Perfume Properly',
+    subtitle: 'Keep your collection fresh for years',
+    description: 'Heat, light, and humidity destroy perfume. Learn the right way to store your fragrances so they last for years.',
+    tags: ['Tips', 'Collection'],
+    icon: 'cube-outline',
+    color: '#c4884a',
+    readingTime: 3,
+    imageKey: 'articles/storing-your-fragrances.webp',
+    sections: [
+      { type: 'heading', text: 'Fragrance Has Enemies' },
+      { type: 'paragraph', text: 'Perfume is a mixture of volatile organic compounds suspended in alcohol. Three things accelerate their degradation: heat, light (especially UV), and oxygen. A well-stored perfume can last 5–10 years or more. A poorly stored one can turn within months.' },
+      { type: 'heading', text: 'The Golden Rules' },
+      { type: 'list', items: [
+        'Keep bottles away from direct sunlight — UV breaks down fragrance molecules',
+        'Store at consistent, cool temperatures (15–20°C / 59–68°F is ideal)',
+        'Never keep perfume in the bathroom — humidity and temperature swings are the worst combo',
+        'Keep the cap on tightly — oxygen exposure causes oxidation and color change',
+        'Store in original box if possible — the packaging was designed to block light',
+      ] },
+      { type: 'heading', text: 'Best Storage Spots' },
+      { type: 'paragraph', text: 'A bedroom drawer, closet shelf, or dedicated fragrance cabinet are all excellent choices. Some collectors use a small wine fridge set to the highest temperature. The key is consistency — avoid spots where temperature fluctuates (near windows, on radiators, in garages).' },
+      { type: 'heading', text: 'Signs Your Perfume Has Turned' },
+      { type: 'paragraph', text: 'Darkened or changed color (amber to brown), a sharp vinegar or plastic-like smell, or a noticeably weaker performance than when new. If the top notes smell "off" but the dry-down is fine, the lighter molecules oxidized first — common in older bottles but not necessarily bad.' },
+    ],
+  },
+  {
+    id: '6',
+    slug: 'best-perfumes-for-date-night',
+    title: 'Best Perfumes for Date Night',
+    subtitle: 'Scents that make an impression',
+    description: 'Choosing the right fragrance for a date can set the mood. These are the scent profiles that attract and captivate.',
+    tags: ['Occasions', 'Recommendations'],
+    icon: 'heart-outline',
+    color: '#d4577a',
+    readingTime: 4,
+    imageKey: 'articles/best-perfumes-for-date-night.webp',
+    sections: [
+      { type: 'heading', text: 'Scent and Attraction' },
+      { type: 'paragraph', text: 'Fragrance is deeply connected to memory and emotion. Studies show that scent is the sense most strongly linked to emotional recall. The right perfume on a date doesn\'t just smell good — it creates an emotional impression that lingers long after the evening ends.' },
+      { type: 'heading', text: 'What Works for Evening' },
+      { type: 'paragraph', text: 'Date night calls for warmth, depth, and a touch of mystery. Oriental and woody families dominate here. Look for notes like vanilla, amber, oud, musk, tonka bean, and warm spices. These project intimacy and sophistication without overwhelming.' },
+      { type: 'heading', text: 'Scent Profiles That Captivate' },
+      { type: 'list', items: [
+        'Warm vanilla + amber — comforting, inviting, universally appealing',
+        'Oud + rose — exotic, confident, memorable',
+        'Leather + spice — bold, magnetic, sophisticated',
+        'Musk + white florals — clean sensuality, elegant and subtle',
+        'Cocoa + tonka — sweet without being cloying, modern warmth',
+      ] },
+      { type: 'heading', text: 'Application Tips for Dates' },
+      { type: 'paragraph', text: 'Less is more. Apply 2–3 sprays maximum — you want your date to discover your scent up close, not smell you from across the restaurant. Focus on neck and chest area for a scent that reveals itself during conversation. Avoid wrists on dates as frequent hand movements project scent too aggressively.' },
+    ],
+  },
+  {
+    id: '7',
+    slug: 'seasonal-fragrance-guide',
+    title: 'Seasonal Fragrance Guide',
+    subtitle: 'What to wear and when',
+    description: 'Why your summer favourite doesn\'t work in winter and how to build a seasonal rotation.',
+    tags: ['Seasonal', 'Guide'],
+    icon: 'sunny-outline',
+    color: '#e8a840',
+    readingTime: 4,
+    imageKey: 'articles/seasonal-fragrance-guide.webp',
+    sections: [
+      { type: 'heading', text: 'Why Seasons Matter' },
+      { type: 'paragraph', text: 'Temperature directly affects how perfume performs. Heat amplifies projection — a heavy perfume that smells amazing in December can become suffocating in July. Cold weather suppresses lighter notes, making fresh scents almost invisible. Matching your fragrance to the season isn\'t snobbery — it\'s practical.' },
+      { type: 'heading', text: 'Spring' },
+      { type: 'paragraph', text: 'Transition season calls for versatile scents. Light florals, green notes, and soft citrus work beautifully. Think fresh but not cold, floral but not heavy. This is the season for "crowd-pleaser" fragrances that are universally inoffensive.' },
+      { type: 'heading', text: 'Summer' },
+      { type: 'paragraph', text: 'Go light, citrusy, and aquatic. Heat projects scent further so you need less and want it lighter. Citrus, marine, cucumber, light musk, and coconut shine here. Avoid heavy orientals and strong ouds — they become cloying in heat.' },
+      { type: 'heading', text: 'Autumn' },
+      { type: 'paragraph', text: 'Warming notes come back into play. Spices (cinnamon, cardamom), dry woods, tobacco, and light amber bridge the gap between summer freshness and winter warmth. Autumn is many fragrance lovers\' favourite season because the most interesting, complex scents thrive here.' },
+      { type: 'heading', text: 'Winter' },
+      { type: 'paragraph', text: 'Go bold. Rich orientals, deep ouds, heavy amber, leather, and sweet gourmand notes (vanilla, chocolate, praline) project beautifully in cold air. This is the season to reach for your strongest, most luxurious bottles. Cold weather tames what would otherwise be overpowering.' },
+      { type: 'heading', text: 'Building a Rotation' },
+      { type: 'list', items: [
+        'Start with one fragrance per season — four bottles covers the year',
+        'Have a "signature" plus seasonal alternatives',
+        'Summer: keep it under 3 sprays. Winter: 4–5 sprays is fine',
+        'Office-safe scents for weekdays, bolder choices for weekends',
+      ] },
+    ],
+  },
+  {
+    id: '8',
+    slug: 'building-a-perfume-collection',
+    title: 'Building Your First Collection',
+    subtitle: 'From 1 bottle to a curated wardrobe',
+    description: 'A smart approach to building a versatile fragrance collection without wasting money on bottles you\'ll never finish.',
+    tags: ['Collection', 'Guide'],
+    icon: 'grid-outline',
+    color: '#8a6a3c',
+    readingTime: 5,
+    imageKey: 'articles/building-a-perfume-collection.webp',
+    sections: [
+      { type: 'heading', text: 'Quality Over Quantity' },
+      { type: 'paragraph', text: 'The biggest mistake new fragrance enthusiasts make is buying too many bottles too quickly. A curated collection of 5–8 well-chosen fragrances will serve you better than 30 impulse purchases collecting dust. Each bottle should fill a specific role in your life.' },
+      { type: 'heading', text: 'The Core Four' },
+      { type: 'paragraph', text: 'Start with four bottles that cover your main needs:' },
+      { type: 'list', items: [
+        'A daily driver — versatile, office-safe, something you can wear anywhere',
+        'A warm-weather scent — fresh, light, citrusy or aquatic',
+        'A cold-weather scent — warm, rich, oriental or woody',
+        'A special occasion scent — something bold, unique, and memorable',
+      ] },
+      { type: 'heading', text: 'Sample Before You Buy' },
+      { type: 'paragraph', text: 'Never buy a full bottle based on a store test alone. Get decants (small samples, usually 2–5ml) from fragrance decant sites. Wear each sample for at least 2–3 full days in different settings. Only buy a full bottle of something you\'ve worn 5+ times and still love.' },
+      { type: 'heading', text: 'Smart Buying Tips' },
+      { type: 'list', items: [
+        'Buy 50ml bottles until you\'re sure — 100ml takes years to finish',
+        'Check discount retailers before paying full retail',
+        'Travel sizes (10–30ml) are great for fragrances you wear occasionally',
+        'Store-exclusive or discontinued bottles hold value if you ever resell',
+        'Gift sets during holidays often offer the best price-per-ml',
+      ] },
+      { type: 'heading', text: 'When to Expand' },
+      { type: 'paragraph', text: 'Once your core four are solid, expand based on gaps. Do you need something for gym/sports? A night-out fragrance? A cozy work-from-home scent? Let your lifestyle guide purchases, not hype or influencer recommendations. The best collection is the one where you actually wear every bottle.' },
+    ],
+  },
+];
+
+function getArticleImageUrl(request: Request, article: Article): string | null {
+  if (!article.imageKey) return null;
+  const url = new URL(request.url);
+  return `${url.origin}/image/${article.imageKey}`;
 }
 
 const SYSTEM_PROMPT = `You are PerfumeSnap, the world's best AI perfume identifier. You ALWAYS identify the perfume shown — even from partial labels, blurry images, side angles, or just the bottle silhouette. You have encyclopedic knowledge of every perfume ever made.
@@ -152,6 +418,14 @@ export default {
         const id = url.pathname.split('/')[2];
         return await handleDeleteFromCollection(request, env, id);
     }
+
+      if (url.pathname === '/articles' && request.method === 'GET') {
+        return handleGetArticles(request, env);
+      }
+
+      if (url.pathname === '/articles/generate-images' && request.method === 'POST') {
+        return await handleGenerateArticleImages(request, env);
+      }
 
     return jsonResponse({ error: 'Not found' }, 404);
     } catch (err: any) {
@@ -453,8 +727,7 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleServeImage(env: Env, key: string): Promise<Response> {
-  // basic key validation: must look like "<uuid>/<uuid>.<ext>"
-  if (!/^[0-9a-f-]+\/[0-9a-f-]+\.[a-z0-9]+$/i.test(key)) {
+  if (!/^[0-9a-z-]+\/[0-9a-z._-]+\.[a-z0-9]+$/i.test(key)) {
     return jsonResponse({ error: 'Invalid image key' }, 400);
   }
   const obj = await env.IMAGES.get(key);
@@ -961,4 +1234,128 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   }
 
   return jsonResponse({ results });
+}
+
+// ----------------------------- Articles Handlers -----------------------------
+
+function handleGetArticles(request: Request, _env: Env): Response {
+  const mapped = ARTICLES.map((a) => ({
+    id: a.id,
+    slug: a.slug,
+    title: a.title,
+    subtitle: a.subtitle,
+    description: a.description,
+    tags: a.tags,
+    icon: a.icon,
+    color: a.color,
+    readingTime: a.readingTime,
+    imageUrl: getArticleImageUrl(request, a),
+    sections: a.sections,
+  }));
+  return jsonResponse(
+    { articles: mapped },
+    200,
+    { 'Cache-Control': 'public, max-age=300' },
+  );
+}
+
+async function handleGenerateArticleImages(request: Request, env: Env): Promise<Response> {
+  if (!env.REPLICATE_API_KEY) {
+    return jsonResponse({ error: 'REPLICATE_API_KEY not configured' }, 501);
+  }
+
+  const articlesNeedingImages = ARTICLES.filter((a) => !a.imageKey);
+  if (articlesNeedingImages.length === 0) {
+    return jsonResponse({ message: 'All articles already have images', count: 0 });
+  }
+
+  const results: Array<{ id: string; slug: string; status: string; imageKey?: string }> = [];
+
+  for (const article of articlesNeedingImages) {
+    try {
+      const prompt = buildImagePrompt(article);
+
+      // Create a prediction using FLUX Schnell (fast, high quality)
+      const createRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.REPLICATE_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'wait',
+        },
+        body: JSON.stringify({
+          input: {
+            prompt,
+            num_outputs: 1,
+            aspect_ratio: '16:9',
+            output_format: 'webp',
+            output_quality: 85,
+          },
+        }),
+      });
+
+      if (!createRes.ok) {
+        const err = await createRes.text();
+        console.error(`Replicate error for ${article.slug}:`, err);
+        results.push({ id: article.id, slug: article.slug, status: 'replicate_error' });
+        continue;
+      }
+
+      const prediction = await createRes.json<{
+        status: string;
+        output?: string[];
+        error?: string;
+      }>();
+
+      if (prediction.status !== 'succeeded' || !prediction.output?.[0]) {
+        console.error(`Prediction not ready for ${article.slug}:`, prediction.status, prediction.error);
+        results.push({ id: article.id, slug: article.slug, status: prediction.status || 'no_output' });
+        continue;
+      }
+
+      const imageUrl = prediction.output[0];
+      const imgRes = await fetch(imageUrl);
+      if (!imgRes.ok) {
+        results.push({ id: article.id, slug: article.slug, status: 'download_failed' });
+        continue;
+      }
+
+      const imgBuf = await imgRes.arrayBuffer();
+      const key = `articles/${article.slug}.webp`;
+      await env.IMAGES.put(key, imgBuf, {
+        httpMetadata: { contentType: 'image/webp' },
+        customMetadata: { articleId: article.id },
+      });
+
+      article.imageKey = key;
+      results.push({ id: article.id, slug: article.slug, status: 'ok', imageKey: key });
+    } catch (err: any) {
+      console.error(`Error generating image for ${article.slug}:`, err);
+      results.push({ id: article.id, slug: article.slug, status: 'error' });
+    }
+  }
+
+  return jsonResponse({ generated: results });
+}
+
+function buildImagePrompt(article: Article): string {
+  const prompts: Record<string, string> = {
+    'fragrance-families-explained':
+      'Elegant flat-lay of four distinct perfume bottles arranged on marble, each representing a fragrance family: a floral pink bottle with rose petals, a warm amber bottle with spices, a woody dark bottle with cedar chips, and a fresh glass bottle with citrus slices. Luxury product photography, soft warm lighting, editorial style, 4k',
+    'understanding-perfume-notes':
+      'Artistic visualization of a perfume notes pyramid: fresh citrus and herbs floating at top, roses and jasmine in the middle, deep woods and vanilla at the base. Translucent layers, dreamy atmosphere, luxury fragrance art, warm gold tones, editorial photography, 4k',
+    'how-to-apply-perfume':
+      'Close-up of elegant hands spraying luxury perfume on the wrist, golden perfume mist visible in warm backlight, silk fabric in background, sophisticated beauty photography, soft bokeh, warm amber tones, editorial style, 4k',
+    'edt-vs-edp-explained':
+      'Three luxury perfume bottles of different sizes lined up showing concentration levels, from light to dark amber liquid, crystal clear glass, dramatic studio lighting with golden reflections, luxury product photography, minimalist composition, 4k',
+    'storing-your-fragrances':
+      'A beautiful dark wood fragrance cabinet with perfume bottles arranged neatly, warm accent lighting, leather and velvet interior, collector display, moody atmospheric photography, rich warm tones, luxury interior, 4k',
+    'best-perfumes-for-date-night':
+      'Romantic still life: a dark luxury perfume bottle surrounded by red rose petals and soft candlelight, silk fabric, gold accents, intimate evening atmosphere, luxury beauty photography, warm moody tones, 4k',
+    'seasonal-fragrance-guide':
+      'Four seasons perfume concept: a perfume bottle in the center with four quadrants showing spring flowers, summer citrus and ocean, autumn leaves and spices, winter snow and warm amber. Artistic editorial photography, warm rich colors, 4k',
+    'building-a-perfume-collection':
+      'A curated perfume collection of 6-8 luxury bottles arranged on a marble shelf, varying heights and designs, warm golden hour lighting, interior design photography, sophisticated and organized display, soft shadows, 4k',
+  };
+  return prompts[article.slug] || `Luxury perfume editorial photo for an article about "${article.title}", warm golden tones, sophisticated, 4k product photography`;
 }

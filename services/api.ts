@@ -303,6 +303,39 @@ export async function getSimilarListings(name: string, brand: string): Promise<S
   }
 }
 
+// ----------------------------- Articles -----------------------------
+
+export interface ArticleSection {
+  type: 'paragraph' | 'heading' | 'subheading' | 'list';
+  text?: string;
+  items?: string[];
+}
+
+export interface ApiArticle {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  tags: string[];
+  icon: string;
+  color: string;
+  readingTime: number;
+  imageUrl: string | null;
+  sections: ArticleSection[];
+}
+
+export async function fetchArticles(): Promise<ApiArticle[]> {
+  try {
+    const res = await fetch(`${API_URL}/articles?v=2`);
+    if (!res.ok) return [];
+    const data = await res.json() as { articles?: ApiArticle[] };
+    return data.articles || [];
+  } catch {
+    return [];
+  }
+}
+
 export async function chatAboutPerfume(
   perfume: PerfumeResult,
   question: string,

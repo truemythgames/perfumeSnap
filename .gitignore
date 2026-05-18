@@ -10,3 +10,9 @@ server/.dev.vars
 *.mobileprovision
 *.orig.*
 web-build/
+
+# Firebase native config files (environment-specific)
+GoogleService-Info.plist
+ios/**/GoogleService-Info.plist
+google-services.json
+android/**/google-services.json
