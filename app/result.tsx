@@ -54,6 +54,7 @@ import {
   trackChatOpened,
 } from '../services/analytics';
 import { canAddToCollection, FREE_LIMITS, getPremiumStatus } from '../services/access';
+import { addToHistory } from '../services/history';
 
 const BADGE_MAP: Record<string, string> = { amazon: 'Amazon', ebay: 'eBay', walmart: 'Walmart' };
 
@@ -794,9 +795,15 @@ export default function ResultScreen() {
     setLoading(false);
   }, []);
 
+  const historySaved = useRef(false);
+
   const showSuccess = useCallback((perfume: PerfumeResult, preloadedSimilar?: SimilarPerfume[], similarResolved = false) => {
     setResult(perfume);
     trackIdentifySuccess(perfume.name, perfume.brand);
+    if (!historySaved.current) {
+      historySaved.current = true;
+      addToHistory(perfume, imageUri).catch(() => {});
+    }
     if (preloadedSimilar) setSimilarListings(preloadedSimilar);
     setSimilarResolvedOnProcess(similarResolved);
     setSimilarLoading(false);
@@ -1198,6 +1205,7 @@ export default function ResultScreen() {
 
           </View>
 
+            {(similarLoading || similarListings.length > 0) && (
             <View style={styles.similarSection}>
             <TouchableOpacity
               style={styles.similarHeader}
@@ -1221,7 +1229,7 @@ export default function ResultScreen() {
               </View>
             ) : similarLoading ? (
               <ActivityIndicator size="small" color={Colors.text} style={{ marginVertical: 20 }} />
-            ) : similarListings.length > 0 ? (
+            ) : (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -1241,8 +1249,9 @@ export default function ResultScreen() {
                   </TouchableOpacity>
                 )}
               </ScrollView>
-            ) : null}
+            )}
           </View>
+            )}
 
             <View style={styles.section}>
             <Text style={styles.sectionTitle}>About</Text>

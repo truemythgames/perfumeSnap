@@ -272,16 +272,23 @@ function getArticleImageUrl(request: Request, article: Article): string | null {
   return `${url.origin}/image/${article.imageKey}`;
 }
 
-const SYSTEM_PROMPT = `You are PerfumeSnap, the world's best AI perfume identifier. You ALWAYS identify the perfume shown — even from partial labels, blurry images, side angles, or just the bottle silhouette. You have encyclopedic knowledge of every perfume ever made.
+const SYSTEM_PROMPT = `You are PerfumeSnap, the world's most accurate AI perfume identifier. You have encyclopedic knowledge of every perfume, cologne, and fragrance ever produced — including their bottle designs, packaging, cap styles, label typography, and color schemes.
+
+IDENTIFICATION METHOD — Follow this exact process:
+1. TEXT READING: First, read ALL visible text in the image — brand names, fragrance names, concentrations (EDP, EDT, Parfum), volume (ml/oz), any words on the box or bottle. Even partial or blurry text matters.
+2. BOTTLE ANALYSIS: Examine the bottle shape, cap design, glass color/tint, spray mechanism, and any distinctive design elements (facets, curves, texturing).
+3. PACKAGING: If a box is visible, note colors, patterns, fonts, embossing, and overall design language.
+4. BRAND MATCHING: Match visual clues to known brand aesthetics (e.g. Chanel = minimalist black/white, Tom Ford = dark lacquered, Jo Malone = cream/black stripe).
+5. CROSS-REFERENCE: Combine all clues to identify the exact fragrance, including the specific flanker/variant if applicable.
 
 CRITICAL RULES:
 - ALWAYS set "identified" to true. NEVER set it to false. No exceptions.
 - You MUST always return a complete, filled-out response no matter what is in the image.
-- If the image shows a perfume: identify it using every visual clue (bottle shape, cap, color, label fragments, box pattern, spray nozzle). Give your best guess even if uncertain.
-- If the label is partially visible, infer the full name from what you can read.
-- The "name" field MUST be the full commercial fragrance name (including line/flanker and concentration when known), not a short fragment. Example style: "Dolce & Gabbana Pour Homme Intenso Eau de Parfum", not just "Intenso".
-- If you can only identify the brand but not the exact fragrance, pick the brand's most popular fragrance that matches the bottle design.
-- If the image does NOT show a perfume (e.g. a beer, a shoe, food, anything): still set "identified" to true, identify the product/object as best you can, and adapt all fields creatively. For example, for a beer bottle: name=the beer name, brand=the brewery, fragranceFamily="Hoppy/Malty/Citrus", description=describe the product, priceRange=actual price, similarPerfumes=similar products. Be creative and informative. The user should always get a fun, useful result.
+- Even from partial labels, side angles, blurry photos, or just a bottle silhouette — you MUST identify it. Use every visual clue available.
+- The "name" field MUST be the full commercial fragrance name including line/flanker and concentration when distinguishable. Example: "Dior Sauvage Elixir", not just "Sauvage".
+- If you see partial text, reconstruct the full name from what's visible combined with your knowledge of existing products.
+- If you can only identify the brand but not the exact fragrance, pick the brand's fragrance that BEST matches the bottle design, color, and any visible text.
+- If the image does NOT show a perfume (e.g. a beer, a shoe, food, anything): still set "identified" to true, identify the product/object as best you can, and adapt all fields creatively. The user should always get a fun, useful result.
 
 Respond ONLY with valid JSON in this exact format (no markdown, no code fences):
 {
@@ -419,6 +426,12 @@ export default {
         return await handleDeleteFromCollection(request, env, id);
     }
 
+      if (url.pathname === '/history') {
+        if (request.method === 'GET') return await handleGetHistory(request, env);
+        if (request.method === 'POST') return await handleAddHistory(request, env);
+        if (request.method === 'DELETE') return await handleClearHistory(request, env);
+      }
+
       if (url.pathname === '/account' && request.method === 'DELETE') {
         return await handleDeleteAccount(request, env);
       }
@@ -474,7 +487,7 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Identify this perfume and provide detailed information.' },
+              { type: 'text', text: 'Read all visible text in this image carefully. Pay close attention to any words, logos, brand markings, product shape, and design details. Then identify the product.' },
               {
                 type: 'image_url',
                 image_url: {
@@ -950,6 +963,77 @@ async function handleDeleteAccount(request: Request, env: Env): Promise<Response
     .bind(userId)
     .run();
 
+  return jsonResponse({ ok: true });
+}
+
+// ----------------------------- Scan History -----------------------------
+
+async function handleGetHistory(request: Request, env: Env): Promise<Response> {
+  const userId = request.headers.get('X-User-Id');
+  if (!userId) return jsonResponse({ error: 'Missing user id' }, 401);
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS scan_history (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      perfume_json TEXT NOT NULL,
+      image_uri TEXT,
+      scanned_at INTEGER NOT NULL
+    )
+  `).run();
+
+  const rows = await env.DB.prepare(
+    'SELECT id, perfume_json, image_uri, scanned_at FROM scan_history WHERE user_id = ? ORDER BY scanned_at DESC LIMIT 200'
+  ).bind(userId).all<{ id: string; perfume_json: string; image_uri: string | null; scanned_at: number }>();
+
+  const items = (rows.results || []).map((r) => ({
+    id: r.id,
+    scannedAt: r.scanned_at,
+    perfume: JSON.parse(r.perfume_json),
+    imageUri: r.image_uri,
+  }));
+
+  return jsonResponse({ items });
+}
+
+async function handleAddHistory(request: Request, env: Env): Promise<Response> {
+  const userId = request.headers.get('X-User-Id');
+  if (!userId) return jsonResponse({ error: 'Missing user id' }, 401);
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS scan_history (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      perfume_json TEXT NOT NULL,
+      image_uri TEXT,
+      scanned_at INTEGER NOT NULL
+    )
+  `).run();
+
+  let body: { perfume?: any; imageUri?: string };
+  try {
+    body = await request.json<{ perfume?: any; imageUri?: string }>();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON' }, 400);
+  }
+
+  if (!body.perfume) return jsonResponse({ error: 'Missing perfume data' }, 400);
+
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const scannedAt = Date.now();
+
+  await env.DB.prepare(
+    'INSERT INTO scan_history (id, user_id, perfume_json, image_uri, scanned_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(id, userId, JSON.stringify(body.perfume), body.imageUri || null, scannedAt).run();
+
+  return jsonResponse({ id, scannedAt });
+}
+
+async function handleClearHistory(request: Request, env: Env): Promise<Response> {
+  const userId = request.headers.get('X-User-Id');
+  if (!userId) return jsonResponse({ error: 'Missing user id' }, 401);
+
+  await env.DB.prepare('DELETE FROM scan_history WHERE user_id = ?').bind(userId).run();
   return jsonResponse({ ok: true });
 }
 

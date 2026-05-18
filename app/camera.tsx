@@ -158,8 +158,8 @@ export default function CameraScreen() {
         const ImageManipulator = require('expo-image-manipulator');
         const manipulated = await ImageManipulator.manipulateAsync(
           photo.uri,
-          [{ resize: { width: 1024 } }],
-          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+          [{ resize: { width: 1536 } }],
+          { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
         );
         if (manipulated.base64) {
           setPickedImageBase64(manipulated.base64);
@@ -206,13 +206,13 @@ export default function CameraScreen() {
 
     const ImageManipulator = require('expo-image-manipulator');
     const asset = pickerResult.assets[0];
-    const resize = asset.width > 1024 || asset.height > 1024
-      ? [{ resize: { width: asset.width >= asset.height ? 1024 : undefined, height: asset.height > asset.width ? 1024 : undefined } }]
+    const resize = asset.width > 1536 || asset.height > 1536
+      ? [{ resize: { width: asset.width >= asset.height ? 1536 : undefined, height: asset.height > asset.width ? 1536 : undefined } }]
       : [];
     const manipulated = await ImageManipulator.manipulateAsync(
       asset.uri,
       resize,
-      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true },
     );
     if (manipulated.base64) {
       setPickedImageBase64(manipulated.base64);

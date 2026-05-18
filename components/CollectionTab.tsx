@@ -530,7 +530,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
             {items.length > 0 && (
               <TouchableOpacity hitSlop={8}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
             )}
-            <TouchableOpacity hitSlop={8}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
+            <TouchableOpacity hitSlop={8} onPress={() => router.push('/history')}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
             <TouchableOpacity hitSlop={8} onPress={() => router.push('/settings')}><Ionicons name="ellipsis-horizontal" size={22} color={Colors.text} /></TouchableOpacity>
           </View>
         </View>
