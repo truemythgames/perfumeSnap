@@ -446,9 +446,9 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
       return jsonResponse({ error: 'Server misconfigured: missing API key' }, 500);
     }
 
-  let body: { image?: string };
+  let body: { image?: string; mimeType?: string };
   try {
-    body = await request.json<{ image?: string }>();
+    body = await request.json<{ image?: string; mimeType?: string }>();
   } catch {
     return jsonResponse({ error: 'Invalid JSON body' }, 400);
   }
@@ -500,10 +500,10 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
     choices: { message: { content: string; finish_reason?: string } }[];
   }>();
 
-  const raw = data.choices?.[0]?.message?.content?.trim();
-  if (!raw) return jsonResponse({ error: 'Empty AI response' }, 502);
+  const aiRaw = data.choices?.[0]?.message?.content?.trim();
+  if (!aiRaw) return jsonResponse({ error: 'Empty AI response' }, 502);
 
-  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const cleaned = aiRaw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(cleaned);

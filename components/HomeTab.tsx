@@ -13,7 +13,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -125,14 +124,6 @@ export default function HomeTab() {
           { text: 'Not now', style: 'cancel' },
           { text: 'Unlock', onPress: () => router.push('/sales') },
         ],
-      );
-      return;
-    }
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Camera Permission',
-        'PerfumeSnap needs camera access to identify perfumes. Please enable it in Settings.',
       );
       return;
     }

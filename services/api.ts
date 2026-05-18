@@ -101,7 +101,7 @@ export function getApiUrl(): string {
 
 const MAX_RETRIES = 2;
 
-async function callIdentify(base64Image: string, signal: AbortSignal): Promise<PerfumeResult> {
+async function callIdentify(base64Image: string, mimeType: string, signal: AbortSignal): Promise<PerfumeResult> {
   const userId = await getOrCreateUserId();
   const response = await fetch(`${API_URL}/identify`, {
     method: 'POST',
@@ -109,7 +109,7 @@ async function callIdentify(base64Image: string, signal: AbortSignal): Promise<P
       'Content-Type': 'application/json',
       'X-User-Id': userId,
     },
-    body: JSON.stringify({ image: base64Image }),
+    body: JSON.stringify({ image: base64Image, mimeType }),
     signal,
   });
 
@@ -124,7 +124,7 @@ async function callIdentify(base64Image: string, signal: AbortSignal): Promise<P
   return response.json();
 }
 
-export async function identifyPerfume(base64Image: string): Promise<PerfumeResult> {
+export async function identifyPerfume(base64Image: string, mimeType: string = 'image/jpeg'): Promise<PerfumeResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90000);
 
@@ -135,7 +135,7 @@ export async function identifyPerfume(base64Image: string): Promise<PerfumeResul
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const result = await callIdentify(base64Image, controller.signal);
+        const result = await callIdentify(base64Image, mimeType, controller.signal);
         return result;
       } catch (err: any) {
         lastError = err;

@@ -11,9 +11,9 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
+  Pressable,
   Dimensions,
   Platform,
-  Modal,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -36,6 +36,7 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
+import { getPickedImageBase64, clearPickedImageBase64 } from '../services/imageTransfer';
 import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings } from '../services/api';
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
@@ -324,6 +325,7 @@ export default function ResultScreen() {
     if (Array.isArray(v)) return v[0];
     return v;
   }, [params.imageUri]);
+
 
   const prefillRaw = useMemo(() => {
     const v = params.prefill;
@@ -628,13 +630,19 @@ export default function ResultScreen() {
     return { opacity };
   });
 
+  const fullscreenOpacity = useSharedValue(0);
+
   const openPhotoFullscreen = useCallback(() => {
     fullscreenTranslateY.value = 0;
+    fullscreenOpacity.value = 0;
     setPhotoFullscreen(true);
+    fullscreenOpacity.value = withTiming(1, { duration: 200 });
   }, []);
 
   const closePhotoFullscreen = useCallback(() => {
-    setPhotoFullscreen(false);
+    fullscreenOpacity.value = withTiming(0, { duration: 150 }, (finished) => {
+      if (finished) runOnJS(setPhotoFullscreen)(false);
+    });
   }, []);
 
   const fullscreenPanGesture = useMemo(
@@ -673,6 +681,10 @@ export default function ResultScreen() {
         }),
     [closePhotoFullscreen],
   );
+
+  const fullscreenOverlayAnimStyle = useAnimatedStyle(() => ({
+    opacity: fullscreenOpacity.value,
+  }));
 
   const fullscreenBackdropAnimStyle = useAnimatedStyle(() => {
     const ty = fullscreenTranslateY.value;
@@ -749,14 +761,16 @@ export default function ResultScreen() {
   } | null>(null);
   const stepInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const readAsBase64 = async (uri: string): Promise<string> => {
+  const readAsBase64 = async (uri: string): Promise<{ base64: string; mimeType: string }> => {
     const response = await fetch(uri);
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const dataUrl = reader.result as string;
-        resolve(dataUrl.split(',')[1]);
+        const [header, data] = dataUrl.split(',');
+        const mimeType = header.match(/data:(.*?);/)?.[1] || 'image/jpeg';
+        resolve({ base64: data, mimeType });
       };
       reader.onerror = reject;
       reader.readAsDataURL(blob);
@@ -820,8 +834,21 @@ export default function ResultScreen() {
     startStepAnimation();
 
     try {
-      const base64 = await readAsBase64(imageUri);
-      const perfume = await identifyPerfume(base64);
+      const picked = getPickedImageBase64();
+      let base64: string;
+      let mimeType: string;
+      if (picked) {
+        console.log('[PerfumeSnap] Using picker JPEG base64, size:', Math.round(picked.length / 1024), 'KB');
+        base64 = picked;
+        mimeType = 'image/jpeg';
+        clearPickedImageBase64();
+      } else {
+        const result = await readAsBase64(imageUri);
+        base64 = result.base64;
+        mimeType = result.mimeType;
+        console.log('[PerfumeSnap] Read from URI, mime:', mimeType, 'size:', Math.round(base64.length / 1024), 'KB');
+      }
+      const perfume = await identifyPerfume(base64, mimeType);
       let listings: SimilarPerfume[] = [];
       try {
         listings = await getSimilarListings(perfume.name, perfume.brand);
@@ -1067,10 +1094,10 @@ export default function ResultScreen() {
         >
           {/* Framed hero image */}
           <View style={styles.resultHeroWrap}>
-            <TouchableOpacity
-              activeOpacity={0.9}
+            <Pressable
               disabled={!displayImageUri}
               onPress={() => displayImageUri && openPhotoFullscreen()}
+              style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
             >
               <View style={styles.resultHeroFrameOuter}>
                 <LinearGradient
@@ -1103,7 +1130,7 @@ export default function ResultScreen() {
                   </View>
                 </LinearGradient>
               </View>
-            </TouchableOpacity>
+            </Pressable>
             <LinearGradient
               colors={[Colors.surface, 'transparent']}
               style={styles.resultHeroFadeTop}
@@ -1432,51 +1459,50 @@ export default function ResultScreen() {
           )}
         </View>
 
-        {/* Fullscreen Photo Modal */}
-        <Modal
-          visible={photoFullscreen}
-          transparent
-          animationType="none"
-          statusBarTranslucent
-          onRequestClose={closePhotoFullscreen}
+        {/* Fullscreen Photo Overlay — always mounted so image is pre-rendered */}
+        <Animated.View
+          style={[styles.fullscreenOverlay, fullscreenOverlayAnimStyle]}
+          pointerEvents={photoFullscreen ? 'auto' : 'none'}
         >
-          <GestureHandlerRootView style={styles.fullscreenGestureRoot}>
-            <View style={styles.fullscreenBackdrop}>
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.fullscreenBackdropFill, fullscreenBackdropAnimStyle]}
-              />
-              <TouchableOpacity
+          <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.fullscreenBackdropFill, fullscreenBackdropAnimStyle]}
+            />
+            {photoFullscreen && (
+              <Pressable
                 style={StyleSheet.absoluteFill}
-                activeOpacity={1}
                 onPress={closePhotoFullscreen}
               />
-              <GestureDetector gesture={fullscreenPanGesture}>
-                <Animated.View
-                  style={[styles.fullscreenPanArea, fullscreenImageSlideStyle]}
-                  pointerEvents="box-none"
-                  collapsable={false}
-                >
-                  {displayImageUri ? (
-                    <Image
-                      source={{ uri: displayImageUri }}
-                      style={styles.fullscreenImage}
-                      resizeMode="contain"
-                    />
-                  ) : null}
-                </Animated.View>
-              </GestureDetector>
-              <TouchableOpacity
+            )}
+            <GestureDetector gesture={fullscreenPanGesture}>
+              <Animated.View
+                style={[styles.fullscreenPanArea, fullscreenImageSlideStyle]}
+                pointerEvents="box-none"
+                collapsable={false}
+              >
+                {displayImageUri ? (
+                  <Image
+                    source={{ uri: displayImageUri }}
+                    style={styles.fullscreenImage}
+                    resizeMode="contain"
+                    fadeDuration={0}
+                  />
+                ) : null}
+              </Animated.View>
+            </GestureDetector>
+            {photoFullscreen && (
+              <Pressable
                 style={[styles.fullscreenClose, { top: insets.top + Spacing.sm }]}
                 onPress={closePhotoFullscreen}
               >
                 <View style={styles.fullscreenCloseCircle}>
                   <Ionicons name="close" size={24} color="#fff" />
                 </View>
-              </TouchableOpacity>
-            </View>
+              </Pressable>
+            )}
           </GestureHandlerRootView>
-        </Modal>
+        </Animated.View>
 
       </View>
     );
@@ -2260,6 +2286,12 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.sm,
     fontWeight: '700',
     color: Colors.primary,
+  },
+  fullscreenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fullscreenGestureRoot: {
     flex: 1,

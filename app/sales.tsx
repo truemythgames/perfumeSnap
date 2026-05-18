@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   ImageBackground,
   Linking,
@@ -75,6 +76,7 @@ export default function SalesScreen() {
   const [introPackage, setIntroPackage] = useState<PurchasesPackage | null>(null);
   const [annualPackage, setAnnualPackage] = useState<PurchasesPackage | null>(null);
   const [isLoadingPricing, setIsLoadingPricing] = useState(true);
+  const [isPurchasing, setIsPurchasing] = useState(false);
   const titleOpacity = useRef(new Animated.Value(0)).current;
   const pricingOptionsOpacity = useRef(new Animated.Value(0)).current;
   const priceSummaryOpacity = useRef(new Animated.Value(0)).current;
@@ -99,9 +101,37 @@ export default function SalesScreen() {
     }
   };
 
+  const handlePurchase = async () => {
+    const pkg = selectedPlan === 'trial' ? trialPackage : introPackage;
+    if (!pkg) {
+      Alert.alert('Unavailable', 'This plan is not available right now. Please try again later.');
+      return;
+    }
+    setIsPurchasing(true);
+    try {
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+      const premiumEntitlement = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? 'premium';
+      if (customerInfo.entitlements.active[premiumEntitlement]) {
+        router.back();
+      }
+    } catch (error: any) {
+      if (error.userCancelled) return;
+      Alert.alert('Purchase failed', error.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
   const handleRestorePurchases = async () => {
     try {
-      await Purchases.restorePurchases();
+      const customerInfo = await Purchases.restorePurchases();
+      const premiumEntitlement = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? 'premium';
+      if (customerInfo.entitlements.active[premiumEntitlement]) {
+        Alert.alert('Restored', 'Your premium access has been restored.');
+        router.back();
+      } else {
+        Alert.alert('No Subscription Found', 'We could not find an active subscription for your account.');
+      }
     } catch (error) {
       console.warn('[PerfumeSnap] Failed restoring purchases:', error);
     }
@@ -337,8 +367,17 @@ export default function SalesScreen() {
 
               {showContinueButton && (
                 <Animated.View style={{ opacity: continueButtonOpacity }}>
-                  <TouchableOpacity style={styles.continueButton} activeOpacity={0.85}>
-                    <Text style={styles.continueButtonText}>Continue</Text>
+                  <TouchableOpacity
+                    style={styles.continueButton}
+                    activeOpacity={0.85}
+                    onPress={handlePurchase}
+                    disabled={isPurchasing}
+                  >
+                    {isPurchasing ? (
+                      <ActivityIndicator color="#0d0d0d" />
+                    ) : (
+                      <Text style={styles.continueButtonText}>Continue</Text>
+                    )}
                   </TouchableOpacity>
                 </Animated.View>
               )}

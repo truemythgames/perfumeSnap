@@ -7,6 +7,7 @@ import {
   Dimensions,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
@@ -28,6 +29,7 @@ import Animated, {
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { trackPhotoTaken, trackGalleryPick, trackScreenView } from '../services/analytics';
 import { consumeScanIfNeeded, FREE_LIMITS, getScanAllowance } from '../services/access';
+import { setPickedImageBase64 } from '../services/imageTransfer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_HORIZONTAL_PADDING = 20;
@@ -59,7 +61,10 @@ export default function CameraScreen() {
       -1,
       true,
     );
-  }, []);
+    if (permission && !permission.granted) {
+      requestPermission();
+    }
+  }, [permission?.granted]);
 
   const captureAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: captureScale.value * (1 + capturePulse.value * 0.04) }],
@@ -104,15 +109,23 @@ export default function CameraScreen() {
   if (!permission) return null;
 
   if (!permission.granted) {
+    const handleAllowAccess = () => {
+      if (permission.canAskAgain) {
+        requestPermission();
+      } else {
+        Linking.openSettings();
+      }
+    };
+
     return (
       <View style={styles.permissionContainer}>
-        <Ionicons name="camera-outline" size={64} color={Colors.textMuted} />
-        <Text style={styles.permissionTitle}>Camera Access Needed</Text>
+        <Ionicons name="camera-outline" size={64} color={Colors.primary} />
+        <Text style={styles.permissionTitle}>Welcome to PerfumeSnap!</Text>
         <Text style={styles.permissionText}>
-          PerfumeSnap needs camera access to identify perfumes from photos.
+          This feature requires camera access.
         </Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant Access</Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={handleAllowAccess}>
+          <Text style={styles.permissionButtonText}>Allow Access</Text>
         </TouchableOpacity>
       </View>
     );
@@ -137,16 +150,25 @@ export default function CameraScreen() {
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
+        quality: 0.8,
         skipProcessing: true,
         shutterSound: false,
       });
       if (photo?.uri) {
+        const ImageManipulator = require('expo-image-manipulator');
+        const manipulated = await ImageManipulator.manipulateAsync(
+          photo.uri,
+          [{ resize: { width: 1024 } }],
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        );
+        if (manipulated.base64) {
+          setPickedImageBase64(manipulated.base64);
+        }
         await consumeScanIfNeeded();
         trackPhotoTaken();
         router.replace({
           pathname: '/result',
-          params: { imageUri: photo.uri },
+          params: { imageUri: manipulated.uri },
         });
       }
     } catch (err) {
@@ -172,32 +194,36 @@ export default function CameraScreen() {
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(
-        'Photo Library Permission',
-        'PerfumeSnap needs photo library access. Please enable it in Settings.',
-      );
+      Linking.openSettings();
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,
-      base64: true,
-      allowsEditing: true,
-      aspect: [3, 4],
     });
+    if (pickerResult.canceled || !pickerResult.assets[0]) return;
 
-    if (!result.canceled && result.assets[0]?.base64) {
-      await consumeScanIfNeeded();
-      trackGalleryPick();
-      router.replace({
-        pathname: '/result',
-        params: {
-          imageUri: result.assets[0].uri,
-          imageBase64: result.assets[0].base64,
-        },
-      });
+    const ImageManipulator = require('expo-image-manipulator');
+    const asset = pickerResult.assets[0];
+    const resize = asset.width > 1024 || asset.height > 1024
+      ? [{ resize: { width: asset.width >= asset.height ? 1024 : undefined, height: asset.height > asset.width ? 1024 : undefined } }]
+      : [];
+    const manipulated = await ImageManipulator.manipulateAsync(
+      asset.uri,
+      resize,
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+    );
+    if (manipulated.base64) {
+      setPickedImageBase64(manipulated.base64);
     }
+
+    await consumeScanIfNeeded();
+    trackGalleryPick();
+    router.replace({
+      pathname: '/result',
+      params: { imageUri: manipulated.uri },
+    });
   };
 
   const adjustZoom = (delta: number) => {

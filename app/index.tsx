@@ -22,7 +22,6 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import HomeTab from '../components/HomeTab';
 import CollectionTab, { CollectionTabHandle } from '../components/CollectionTab';
 import { Colors, Spacing, FontSizes } from '../constants/theme';
@@ -156,8 +155,6 @@ export default function MainScreen() {
       );
       return;
     }
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') return;
     trackCameraOpened();
     router.push('/camera');
   };
