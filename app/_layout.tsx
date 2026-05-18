@@ -101,6 +101,13 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="settings"
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 250,
+          }}
+        />
+        <Stack.Screen
           name="sales"
           options={{
             animation: 'slide_from_bottom',

@@ -89,6 +89,19 @@ export async function getCurrentOffering(appUserId?: string): Promise<PurchasesO
   }
 }
 
+export async function restorePurchases(appUserId?: string): Promise<boolean> {
+  const ready = await initRevenueCat(appUserId);
+  if (!ready) return false;
+
+  try {
+    const customerInfo = await Purchases.restorePurchases();
+    return Boolean(customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID]);
+  } catch (error) {
+    console.warn('[PerfumeSnap] Failed restoring purchases:', error);
+    return false;
+  }
+}
+
 export type PaywallPackages = {
   trialPackage: PurchasesPackage | null;
   introPackage: PurchasesPackage | null;

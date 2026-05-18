@@ -275,6 +275,15 @@ export async function deleteFromCollection(itemId: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete (${res.status})`);
 }
 
+export async function deleteAccount(): Promise<void> {
+  const userId = await getOrCreateUserId();
+  const res = await fetch(`${API_URL}/account`, {
+    method: 'DELETE',
+    headers: { 'X-User-Id': userId },
+  });
+  if (!res.ok) throw new Error(`Failed to delete account (${res.status})`);
+}
+
 export async function getSimilarListings(name: string, brand: string): Promise<SimilarPerfume[]> {
   try {
     const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';

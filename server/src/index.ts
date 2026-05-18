@@ -419,6 +419,10 @@ export default {
         return await handleDeleteFromCollection(request, env, id);
     }
 
+      if (url.pathname === '/account' && request.method === 'DELETE') {
+        return await handleDeleteAccount(request, env);
+      }
+
       if (url.pathname === '/articles' && request.method === 'GET') {
         return handleGetArticles(request, env);
       }
@@ -916,6 +920,34 @@ async function handleDeleteFromCollection(
 
   await env.DB.prepare('DELETE FROM collection_items WHERE id = ? AND user_id = ?')
     .bind(itemId, userId)
+    .run();
+
+  return jsonResponse({ ok: true });
+}
+
+// ----------------------------- Delete Account -----------------------------
+
+async function handleDeleteAccount(request: Request, env: Env): Promise<Response> {
+  const userId = getUserId(request);
+  if (!userId) return jsonResponse({ error: 'Missing or invalid userId' }, 400);
+
+  const rows = await env.DB.prepare(
+    'SELECT perfume_json FROM collection_items WHERE user_id = ?'
+  )
+    .bind(userId)
+    .all<{ perfume_json: string }>();
+
+  for (const row of rows.results || []) {
+    try {
+      const data = JSON.parse(row.perfume_json) as { imageKey?: string | null };
+      if (data.imageKey) {
+        await env.IMAGES.delete(data.imageKey);
+      }
+    } catch {}
+  }
+
+  await env.DB.prepare('DELETE FROM collection_items WHERE user_id = ?')
+    .bind(userId)
     .run();
 
   return jsonResponse({ ok: true });
