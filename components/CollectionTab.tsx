@@ -485,54 +485,55 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
             </TouchableOpacity>
           </View>
         ) : (
-          <>
-            <Animated.FlatList
-              data={listData}
-              keyExtractor={(it) => (isToolbarRow(it) ? 'toolbar' : it.id)}
-              renderItem={renderItem}
-              ListHeaderComponent={renderHero}
-              stickyHeaderIndices={[1]}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              onScroll={scrollHandler}
-              contentInset={Platform.OS === 'ios' ? { top: ICON_BAR_HEIGHT } : undefined}
-              contentOffset={Platform.OS === 'ios' ? { x: 0, y: -ICON_BAR_HEIGHT } : undefined}
-              scrollIndicatorInsets={Platform.OS === 'ios' ? { top: ICON_BAR_HEIGHT } : undefined}
-              contentInsetAdjustmentBehavior="never"
-              automaticallyAdjustContentInsets={false}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  tintColor={Colors.primary}
-                  progressViewOffset={ICON_BAR_HEIGHT}
-                />
-              }
-              onEndReachedThreshold={0.5}
-              onEndReached={loadMore}
-              scrollEventThrottle={16}
-              ListFooterComponent={
-                loadingMore ? (
-                  <View style={{ paddingVertical: Spacing.lg }}>
-                    <ActivityIndicator color={Colors.primary} />
-                  </View>
-                ) : null
-              }
-            />
-
-            {/* Icon bar — transparent at rest, solid color when scrolled */}
-            <View style={[styles.fixedHeader, { paddingTop: insets.top, height: ICON_BAR_HEIGHT }]}>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.iconBarFill, heroBlurStyle]} pointerEvents="none" />
-              <View style={styles.headerIcons}>
-                <TouchableOpacity hitSlop={8}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
-                <TouchableOpacity hitSlop={8}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
-                <TouchableOpacity hitSlop={8}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
-                <TouchableOpacity hitSlop={8}><Ionicons name="ellipsis-horizontal" size={22} color={Colors.text} /></TouchableOpacity>
-              </View>
-            </View>
-          </>
+          <Animated.FlatList
+            data={listData}
+            keyExtractor={(it) => (isToolbarRow(it) ? 'toolbar' : it.id)}
+            renderItem={renderItem}
+            ListHeaderComponent={renderHero}
+            stickyHeaderIndices={[1]}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            onScroll={scrollHandler}
+            contentInset={Platform.OS === 'ios' ? { top: ICON_BAR_HEIGHT } : undefined}
+            contentOffset={Platform.OS === 'ios' ? { x: 0, y: -ICON_BAR_HEIGHT } : undefined}
+            scrollIndicatorInsets={Platform.OS === 'ios' ? { top: ICON_BAR_HEIGHT } : undefined}
+            contentInsetAdjustmentBehavior="never"
+            automaticallyAdjustContentInsets={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={Colors.primary}
+                progressViewOffset={ICON_BAR_HEIGHT}
+              />
+            }
+            onEndReachedThreshold={0.5}
+            onEndReached={loadMore}
+            scrollEventThrottle={16}
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={{ paddingVertical: Spacing.lg }}>
+                  <ActivityIndicator color={Colors.primary} />
+                </View>
+              ) : null
+            }
+          />
         )}
 
+        {/* Icon bar — always visible */}
+        <View style={[styles.fixedHeader, { paddingTop: insets.top, height: ICON_BAR_HEIGHT }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.iconBarFill, heroBlurStyle]} pointerEvents="none" />
+          <View style={styles.headerIcons}>
+            {items.length > 0 && (
+              <TouchableOpacity hitSlop={8}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
+            )}
+            {items.length > 0 && (
+              <TouchableOpacity hitSlop={8}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
+            )}
+            <TouchableOpacity hitSlop={8}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
+            <TouchableOpacity hitSlop={8}><Ionicons name="ellipsis-horizontal" size={22} color={Colors.text} /></TouchableOpacity>
+          </View>
+        </View>
       </View>
 
     </LinearGradient>
