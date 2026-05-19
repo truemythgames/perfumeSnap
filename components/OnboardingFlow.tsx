@@ -13,6 +13,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useDerivedValue,
   withTiming,
   withSpring,
   withDelay,
@@ -21,6 +22,7 @@ import Animated, {
   Easing,
   cancelAnimation,
   interpolate,
+  Extrapolation,
   runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -45,12 +47,46 @@ const LAST_FLASH_FRAME_HOLD_MS = 420;
 const WELCOME_HOLD_MS = 0;
 const PHOTO_SETTLE_BEFORE_FRAME_MS = 220;
 const WELCOME_FRAME_FADE_MS = 1800;
-const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS;
+const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS + 2000;
 const FINAL_IMAGE_START_Y = 210;
 const IMAGE_TRANSITION_MS = 900;
 const TOP_SECTION_HEIGHT = SCREEN_HEIGHT * 0.54;
 const PHOTO_FRAME_HEIGHT = SCREEN_WIDTH * 0.82;
 const SHINE_SWEEP_HEIGHT = SCREEN_HEIGHT * 0.5;
+const EASY_TO_VALUATION_DELAY_MS = 8000;
+const VALUATION_TARGET_PRICE = 560;
+const CONFETTI_BURST_DURATION_MS = 1500;
+const CONFETTI_FADE_OUT_MS = 320;
+const CONFETTI_COLORS = ['#f0d38f', '#d9b46a', '#fff2cd', '#c99745', '#e7c27a', '#f6e0aa', '#d3a250'];
+const CONFETTI_COUNT = 92;
+
+type ConfettiPieceConfig = {
+  startX: number;
+  startY: number;
+  driftX: number;
+  up: number;
+  gravity: number;
+  size: number;
+  stretch: number;
+  roundness: number;
+  spin: number;
+  color: string;
+  delay: number;
+};
+
+const CONFETTI_PIECES: ConfettiPieceConfig[] = Array.from({ length: CONFETTI_COUNT }, (_, i) => ({
+  startX: 8 + Math.random() * (SCREEN_WIDTH - 16),
+  startY: TOP_SECTION_HEIGHT * (0.84 + Math.random() * 0.14),
+  driftX: (Math.random() - 0.5) * 170,
+  up: 140 + Math.random() * 200,
+  gravity: 140 + Math.random() * 250,
+  size: 4 + Math.random() * 6,
+  stretch: 0.55 + Math.random() * 0.7,
+  roundness: Math.random() > 0.55 ? 999 : 1.5 + Math.random() * 3,
+  spin: (Math.random() - 0.5) * 520,
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  delay: Math.random() * 0.08,
+}));
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -154,6 +190,42 @@ function Particle({ initialDelay }: ParticleProps) {
   );
 }
 
+interface ConfettiPieceProps {
+  config: ConfettiPieceConfig;
+  progress: SharedValue<number>;
+  opacity: SharedValue<number>;
+}
+
+function ConfettiPiece({ config, progress, opacity }: ConfettiPieceProps) {
+  const localProgress = useDerivedValue(() =>
+    interpolate(progress.value, [config.delay, 1], [0, 1], Extrapolation.CLAMP),
+  );
+  const style = useAnimatedStyle(() => ({
+    // Classic confetti burst trajectory: upward launch + gravity pull.
+    // y(t) = -up*t + gravity*t^2
+    position: 'absolute',
+    left: config.startX,
+    top: config.startY,
+    width: config.size,
+    height: config.size * config.stretch,
+    borderRadius: config.roundness,
+    backgroundColor: config.color,
+    opacity: opacity.value * interpolate(localProgress.value, [0, 0.1, 0.82, 1], [0, 1, 1, 0]),
+    transform: [
+      { translateX: config.driftX * localProgress.value },
+      {
+        translateY:
+          -config.up * localProgress.value +
+          config.gravity * localProgress.value * localProgress.value,
+      },
+      { rotate: `${config.spin * localProgress.value}deg` },
+      { scale: interpolate(localProgress.value, [0, 1], [1, 0.9]) },
+    ],
+  }));
+
+  return <Animated.View pointerEvents="none" style={style} />;
+}
+
 const PARTICLE_COUNT = 40;
 const PARTICLE_DELAYS = Array.from({ length: PARTICLE_COUNT }, (_, i) =>
   Math.round((i / PARTICLE_COUNT) * 8000 + Math.random() * 500),
@@ -171,6 +243,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const [showFinalImage, setShowFinalImage] = useState(false);
   const [showWelcomeFrameIntro, setShowWelcomeFrameIntro] = useState(false);
   const [recognitionPhaseKey, setRecognitionPhaseKey] = useState(0);
+  const [valuationPrice, setValuationPrice] = useState(VALUATION_TARGET_PRICE);
 
   // Welcome animations
   const welcomeOpacity = useSharedValue(1);
@@ -199,8 +272,16 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const shineRotation = useSharedValue(0);
   const processingFrameRotate = useSharedValue(0);
   const processingFrameReveal = useSharedValue(0);
+  const processingFrameScale = useSharedValue(1);
   const recognitionContentOpacity = useSharedValue(0);
   const welcomeFrameReveal = useSharedValue(0);
+  const valuationTagOpacity = useSharedValue(0);
+  const valuationTagTranslateY = useSharedValue(10);
+  const valuationTagScale = useSharedValue(0.94);
+  const sealOpacity = useSharedValue(1);
+  const welcomeFrameGlow = useSharedValue(0);
+  const confettiProgress = useSharedValue(0);
+  const confettiOpacity = useSharedValue(0);
 
   const onWelcomeLayout = useCallback(() => {
     SplashScreen.hideAsync();
@@ -340,6 +421,17 @@ export default function OnboardingFlow({ onComplete }: Props) {
     // Ensure the next step visuals are fully hidden during image handoff.
     recognitionOpacity.value = 0;
     recognitionContentOpacity.value = 0;
+    valuationTagOpacity.value = 0;
+    valuationTagTranslateY.value = 10;
+    valuationTagScale.value = 0.94;
+    confettiProgress.value = 0;
+    confettiOpacity.value = 0;
+    setValuationPrice(VALUATION_TARGET_PRICE);
+    sealOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
+    cancelAnimation(finalImageTranslateY);
+    cancelAnimation(finalImageScale);
+    cancelAnimation(welcomeFrameGlow);
+    welcomeFrameGlow.value = 0;
 
     if (isImageTransitioning) {
       // Keep welcome static while shared image transitions.
@@ -350,9 +442,31 @@ export default function OnboardingFlow({ onComplete }: Props) {
     }
 
     // If user reaches this screen directly, keep a simple static presentation.
-    finalImageTranslateY.value = 0;
-    finalImageScale.value = 1;
+    finalImageTranslateY.value = withRepeat(
+      withSequence(
+        withTiming(-2.5, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
+    finalImageScale.value = withRepeat(
+      withSequence(
+        withTiming(1.012, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
     finalContentOpacity.value = 1;
+    welcomeFrameGlow.value = withRepeat(
+      withSequence(
+        withTiming(0.34, { duration: 1900, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.08, { duration: 1900, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
     setShowFinalImage(true);
   }, [step, isImageTransitioning]);
 
@@ -383,10 +497,23 @@ export default function OnboardingFlow({ onComplete }: Props) {
     if (step !== 4) return;
 
     let tiltTimer: ReturnType<typeof setTimeout> | null = null;
+    let valuationTimer: ReturnType<typeof setTimeout> | null = null;
     processingBgOpacity.value = 0;
     processingFrameRotate.value = 0;
+    processingFrameScale.value = 1;
+    cancelAnimation(finalImageTranslateY);
+    cancelAnimation(finalImageScale);
+    finalImageTranslateY.value = 0;
+    finalImageScale.value = 1;
+    cancelAnimation(welcomeFrameGlow);
+    welcomeFrameGlow.value = 0;
     processingFrameReveal.value = showWelcomeFrameIntro ? 1 : 0;
     recognitionContentOpacity.value = 0;
+    sealOpacity.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) });
+    valuationTagOpacity.value = 0;
+    valuationTagTranslateY.value = 10;
+    confettiProgress.value = 0;
+    confettiOpacity.value = 0;
     processingBgOpacity.value = withTiming(1, { duration: 700, easing: Easing.out(Easing.cubic) });
     if (!showWelcomeFrameIntro) {
       processingFrameReveal.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
@@ -404,23 +531,110 @@ export default function OnboardingFlow({ onComplete }: Props) {
       false,
     );
     processingFrameRotate.value = withDelay(
-      600,
-      withTiming(-1.5, { duration: 500, easing: Easing.out(Easing.quad) }),
+      850,
+      withTiming(-0.6, { duration: 900, easing: Easing.inOut(Easing.cubic) }),
     );
     tiltTimer = setTimeout(() => {
       processingFrameRotate.value = withRepeat(
-        withTiming(1.5, { duration: 3500, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.95, { duration: 4200, easing: Easing.inOut(Easing.ease) }),
         -1,
         true,
       );
-    }, 1300);
+    }, 1900);
+    valuationTimer = setTimeout(() => {
+      setStep(5);
+    }, EASY_TO_VALUATION_DELAY_MS);
 
     return () => {
       if (tiltTimer) clearTimeout(tiltTimer);
+      if (valuationTimer) clearTimeout(valuationTimer);
       cancelAnimation(shineRotation);
       cancelAnimation(processingFrameRotate);
     };
   }, [step, showWelcomeFrameIntro]);
+
+  useEffect(() => {
+    if (step !== 5) return;
+
+    const startPrice = 470;
+    const steps = 40;
+    const intervalMs = 50;
+    let tick = 0;
+    const priceTimer: ReturnType<typeof setInterval> = setInterval(() => {
+      tick += 1;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+      if (tick >= steps) {
+        setValuationPrice(VALUATION_TARGET_PRICE);
+        confettiProgress.value = 0;
+        confettiOpacity.value = 1;
+        confettiProgress.value = withTiming(1, {
+          duration: CONFETTI_BURST_DURATION_MS,
+          easing: Easing.out(Easing.cubic),
+        });
+        confettiOpacity.value = withSequence(
+          withTiming(1, { duration: 1 }),
+          withDelay(
+            CONFETTI_BURST_DURATION_MS - CONFETTI_FADE_OUT_MS,
+            withTiming(0, { duration: CONFETTI_FADE_OUT_MS, easing: Easing.out(Easing.cubic) }),
+          ),
+        );
+        clearInterval(priceTimer);
+        return;
+      }
+      const next = Math.round(startPrice + ((VALUATION_TARGET_PRICE - startPrice) * tick) / steps);
+      setValuationPrice(next);
+    }, intervalMs);
+
+    // Stop scanning shimmer in valuation phase.
+    cancelAnimation(shineRotation);
+    cancelAnimation(processingFrameRotate);
+    cancelAnimation(processingFrameScale);
+    processingFrameRotate.value = withSequence(
+      withTiming(-0.35, { duration: 120, easing: Easing.out(Easing.quad) }),
+      withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) }),
+    );
+    processingFrameScale.value = withSequence(
+      withTiming(1.03, { duration: 140, easing: Easing.out(Easing.quad) }),
+      withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }),
+    );
+    recognitionContentOpacity.value = 0;
+    recognitionContentOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
+    valuationTagOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
+    valuationTagTranslateY.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) });
+    valuationTagScale.value = withSequence(
+      withTiming(1.06, { duration: 190, easing: Easing.out(Easing.quad) }),
+      withTiming(1, { duration: 170, easing: Easing.out(Easing.cubic) }),
+      withDelay(
+        700,
+        withRepeat(
+          withSequence(
+            withTiming(1.018, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+            withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+          ),
+          -1,
+          false,
+        ),
+      ),
+    );
+    processingFrameScale.value = withSequence(
+      withTiming(1.03, { duration: 140, easing: Easing.out(Easing.quad) }),
+      withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }),
+      withDelay(
+        700,
+        withRepeat(
+          withSequence(
+            withTiming(1.006, { duration: 1700, easing: Easing.inOut(Easing.ease) }),
+            withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.ease) }),
+          ),
+          -1,
+          false,
+        ),
+      ),
+    );
+    return () => {
+      clearInterval(priceTimer);
+    };
+  }, [step]);
 
   const advanceTo = (next: number) => {
     // Welcome -> Recognition should feel like "frame is added",
@@ -542,13 +756,23 @@ export default function OnboardingFlow({ onComplete }: Props) {
   });
   const processingFrameAnimStyle = useAnimatedStyle(() => ({
     opacity: processingFrameReveal.value,
-    transform: [{ rotate: `${processingFrameRotate.value}deg` }],
+    transform: [{ rotate: `${processingFrameRotate.value}deg` }, { scale: processingFrameScale.value }],
   }));
   const welcomeFrameIntroStyle = useAnimatedStyle(() => ({
     opacity: welcomeFrameReveal.value,
   }));
   const recognitionContentStyle = useAnimatedStyle(() => ({
     opacity: recognitionContentOpacity.value,
+  }));
+  const valuationTagStyle = useAnimatedStyle(() => ({
+    opacity: valuationTagOpacity.value,
+    transform: [{ translateY: valuationTagTranslateY.value }, { scale: valuationTagScale.value }],
+  }));
+  const sealStyle = useAnimatedStyle(() => ({
+    opacity: sealOpacity.value,
+  }));
+  const welcomeFrameGlowStyle = useAnimatedStyle(() => ({
+    opacity: welcomeFrameGlow.value,
   }));
 
   const tripleCards = [...PERFUMES, ...PERFUMES, ...PERFUMES];
@@ -561,7 +785,9 @@ export default function OnboardingFlow({ onComplete }: Props) {
     </View>
   );
 
-  const isRecognitionPhase = step >= 4;
+  const hasProcessingVisuals = step >= 4;
+  const isEasyPhotoPhase = step === 4;
+  const isValuationPhase = step >= 5;
 
   return (
     <View style={st.root}>
@@ -638,11 +864,11 @@ export default function OnboardingFlow({ onComplete }: Props) {
       {/* ── Step 3: Final welcome with one perfume ── */}
       <Animated.View
         style={[st.layer, rateFade]}
-        pointerEvents={step === 3 || step === 4 ? 'auto' : 'none'}
+        pointerEvents={step === 3 || step === 4 || step === 5 ? 'auto' : 'none'}
       >
         <View style={st.finalScreen}>
-          <View style={[st.finalHero, isRecognitionPhase && st.processingHero]}>
-            {isRecognitionPhase && (
+          <View style={[st.finalHero, hasProcessingVisuals && st.processingHero]}>
+            {hasProcessingVisuals && (
               <Animated.View style={[st.processingBackgroundOverlay, processingBgStyle]}>
                 <LinearGradient
                   colors={['#1a1410', Colors.background, '#0c0a08']}
@@ -650,9 +876,10 @@ export default function OnboardingFlow({ onComplete }: Props) {
                   style={StyleSheet.absoluteFill}
                 />
                 <View style={st.particleLayer} pointerEvents="none">
-                  {PARTICLE_DELAYS.map((delay, i) => (
-                    <Particle key={`${recognitionPhaseKey}-${i}`} initialDelay={delay} />
-                  ))}
+                  {isEasyPhotoPhase &&
+                    PARTICLE_DELAYS.map((delay, i) => (
+                      <Particle key={`${recognitionPhaseKey}-${i}`} initialDelay={delay} />
+                    ))}
                 </View>
                 <View style={st.accentLineTop} />
                 <View style={st.accentLineBot} />
@@ -671,12 +898,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
               />
             </Animated.View>
 
-            {(showWelcomeFrameIntro || isRecognitionPhase) && (
+            {(showWelcomeFrameIntro || hasProcessingVisuals) && (
               <Animated.View
                 style={[
                   st.processingFrameWrap,
                   st.welcomeFrameWrap,
-                  isRecognitionPhase ? processingFrameAnimStyle : welcomeFrameIntroStyle,
+                  hasProcessingVisuals ? processingFrameAnimStyle : welcomeFrameIntroStyle,
                 ]}
               >
                 <View style={st.frameBorderOuter}>
@@ -695,7 +922,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
                       >
                         <View style={st.photoClip}>
                           <Image source={FINAL_PERFUME_IMAGE} style={st.photoFrameImage} />
-                          {isRecognitionPhase && (
+                          {isEasyPhotoPhase && (
                             <Animated.View style={[st.shineSweep, shineSweepStyle]} pointerEvents="none">
                               <LinearGradient
                                 colors={[
@@ -719,30 +946,55 @@ export default function OnboardingFlow({ onComplete }: Props) {
                     </View>
                   </LinearGradient>
                 </View>
+                {!hasProcessingVisuals && (
+                  <Animated.View style={[st.welcomeFrameGlow, welcomeFrameGlowStyle]} pointerEvents="none" />
+                )}
               </Animated.View>
             )}
-            <View style={st.seal}>
+            {isValuationPhase && (
+              <Animated.View style={[st.valuationTag, valuationTagStyle]}>
+                <Text style={st.valuationTagLabel}>Estimated Price</Text>
+                <Text style={st.valuationTagPrice}>${valuationPrice.toLocaleString()}</Text>
+              </Animated.View>
+            )}
+            {isValuationPhase && (
+              <View style={st.confettiLayer} pointerEvents="none">
+                {CONFETTI_PIECES.map((piece, i) => (
+                  <ConfettiPiece
+                    key={`confetti-${i}`}
+                    config={piece}
+                    progress={confettiProgress}
+                    opacity={confettiOpacity}
+                  />
+                ))}
+              </View>
+            )}
+            <Animated.View style={[st.seal, sealStyle]}>
               <Ionicons name="sparkles" size={20} color="#f7eddc" />
-            </View>
+            </Animated.View>
           </View>
           <Animated.View
             style={[
               st.finalContent,
-              isRecognitionPhase ? recognitionContentStyle : finalContentRevealStyle,
+              hasProcessingVisuals ? recognitionContentStyle : finalContentRevealStyle,
             ]}
           >
             <Text style={st.finalTitle}>
-              {isRecognitionPhase ? 'Easy Photo Recognition' : `Welcome To\nPerfumeSnap`}
+              {isValuationPhase
+                ? 'Get Perfume Valuations'
+                : (isEasyPhotoPhase ? 'Easy Photo Recognition' : `Welcome To\nPerfumeSnap`)}
             </Text>
             <Text style={st.finalSubtitle}>
-              {isRecognitionPhase
-                ? 'Simply Snap A Picture To Get Detailed Information And Valuation'
-                : 'Discover The Hidden Value Of Your Perfume Collection With A Simple Photo'}
+              {isValuationPhase
+                ? 'Dive Into The details Of Each Perfume And Receive A Professional Market Valuation.'
+                : (isEasyPhotoPhase
+                    ? 'Simply Snap A Picture To Get Detailed Information And Valuation'
+                    : 'Discover The Hidden Value Of Your Perfume Collection With A Simple Photo')}
             </Text>
             <View style={st.finalProgressRow}>
-              <View style={[st.finalProgressBar, !isRecognitionPhase && st.finalProgressBarActive]} />
-              <View style={[st.finalProgressBar, isRecognitionPhase && st.finalProgressBarActive]} />
-              <View style={st.finalProgressBar} />
+              <View style={[st.finalProgressBar, !hasProcessingVisuals && st.finalProgressBarActive]} />
+              <View style={[st.finalProgressBar, isEasyPhotoPhase && st.finalProgressBarActive]} />
+              <View style={[st.finalProgressBar, isValuationPhase && st.finalProgressBarActive]} />
               <View style={st.finalProgressBar} />
             </View>
           </Animated.View>
@@ -957,6 +1209,16 @@ const st = StyleSheet.create({
     borderRadius: 4,
     padding: 4,
   },
+  welcomeFrameGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(240, 211, 143, 0.72)',
+    shadowColor: '#f0d38f',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+  },
   photoClip: {
     flex: 1,
     borderRadius: 3,
@@ -1005,6 +1267,35 @@ const st = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#cfb287',
+  },
+  valuationTag: {
+    position: 'absolute',
+    left: Spacing.lg + 8,
+    bottom: Spacing.lg + 6,
+    backgroundColor: 'rgba(14, 12, 10, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(220, 192, 122, 0.5)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minWidth: 128,
+  },
+  valuationTagLabel: {
+    color: 'rgba(245, 227, 189, 0.85)',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  valuationTagPrice: {
+    color: '#f2d58d',
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '800',
+  },
+  confettiLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
   },
   finalProgressRow: {
     flexDirection: 'row',
