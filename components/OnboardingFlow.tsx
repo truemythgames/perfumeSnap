@@ -76,7 +76,7 @@ const COLLECTION_FRAME_TARGET_TOP =
   (TOP_SECTION_HEIGHT - COLLECTION_FRAME_BASE_HEIGHT) / 2 +
   COLLECTION_FRAME_TARGET_TY +
   (COLLECTION_FRAME_BASE_HEIGHT * (1 - COLLECTION_FRAME_TARGET_SCALE)) / 2;
-const COLLECTION_FIRST_ROW_TOP = COLLECTION_FRAME_TARGET_TOP - 5;
+const COLLECTION_FIRST_ROW_TOP = COLLECTION_FRAME_TARGET_TOP;
 const COLLECTION_ROW_SPACING = COLLECTION_SLIDE_FRAME_HEIGHT * 0.82;
 const CONFETTI_COLORS = ['#f0d38f', '#d9b46a', '#fff2cd', '#c99745', '#e7c27a', '#f6e0aa', '#d3a250'];
 const CONFETTI_COUNT = 92;
@@ -217,19 +217,18 @@ function Particle({ initialDelay }: ParticleProps) {
   );
 }
 
-const WELCOME_SPARKLE_COUNT = 14;
-type SparkleConfig = { x: number; y: number; size: number; delay: number; duration: number };
+const WELCOME_SPARKLE_COUNT = 18;
+type SparkleConfig = { x: number; y: number; size: number; delay: number };
 const WELCOME_SPARKLES: SparkleConfig[] = Array.from({ length: WELCOME_SPARKLE_COUNT }, () => ({
-  x: 0.08 + Math.random() * 0.84,
-  y: 0.08 + Math.random() * 0.84,
-  size: 2.5 + Math.random() * 3.5,
-  delay: Math.random() * 1200,
-  duration: 600 + Math.random() * 800,
+  x: 0.05 + Math.random() * 0.9,
+  y: 0.05 + Math.random() * 0.9,
+  size: 3 + Math.random() * 5,
+  delay: Math.random() * 1400,
 }));
 
 function WelcomeSparkle({ config }: { config: SparkleConfig }) {
-  const opacity = useSharedValue(0);
-  const [pos, setPos] = useState({ x: config.x, y: config.y, size: config.size });
+  const progress = useSharedValue(0);
+  const [pos, setPos] = useState({ x: config.x, y: config.y, size: config.size, rotation: Math.random() * 45 });
   const mounted = useRef(true);
 
   useEffect(() => () => { mounted.current = false; }, []);
@@ -237,21 +236,19 @@ function WelcomeSparkle({ config }: { config: SparkleConfig }) {
   const respawn = useCallback(() => {
     if (!mounted.current) return;
     setPos({
-      x: 0.06 + Math.random() * 0.88,
-      y: 0.06 + Math.random() * 0.88,
-      size: 2 + Math.random() * 4,
+      x: 0.05 + Math.random() * 0.9,
+      y: 0.05 + Math.random() * 0.9,
+      size: 3 + Math.random() * 5,
+      rotation: Math.random() * 45,
     });
   }, []);
 
   useEffect(() => {
-    const dur = 500 + Math.random() * 900;
-    const pause = 200 + Math.random() * 600;
+    const dur = 600 + Math.random() * 1000;
+    const pause = 300 + Math.random() * 800;
+    progress.value = 0;
     const timer = setTimeout(() => {
-      opacity.value = withSequence(
-        withTiming(1, { duration: dur * 0.35, easing: Easing.out(Easing.quad) }),
-        withTiming(0, { duration: dur * 0.65, easing: Easing.in(Easing.quad) }),
-        withDelay(pause, withTiming(0, { duration: 1 })),
-      );
+      progress.value = withTiming(1, { duration: dur, easing: Easing.linear });
       setTimeout(() => {
         if (mounted.current) respawn();
       }, dur + pause);
@@ -259,22 +256,66 @@ function WelcomeSparkle({ config }: { config: SparkleConfig }) {
     return () => clearTimeout(timer);
   }, [pos]);
 
-  const style = useAnimatedStyle(() => ({
-    position: 'absolute' as const,
-    left: `${pos.x * 100}%`,
-    top: `${pos.y * 100}%`,
-    width: pos.size,
-    height: pos.size,
-    borderRadius: pos.size / 2,
-    backgroundColor: '#fff',
-    opacity: opacity.value,
-    shadowColor: '#f0d38f',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 4,
-  }));
+  const coreStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    const scale = interpolate(p, [0, 0.2, 0.5, 1], [0, 1.3, 1, 0]);
+    const o = interpolate(p, [0, 0.15, 0.5, 0.85, 1], [0, 1, 0.85, 0.4, 0]);
+    return {
+      position: 'absolute' as const,
+      left: `${pos.x * 100}%`,
+      top: `${pos.y * 100}%`,
+      width: pos.size,
+      height: pos.size,
+      opacity: o,
+      transform: [
+        { scale },
+        { rotate: `${pos.rotation}deg` },
+      ],
+    };
+  });
 
-  return <Animated.View pointerEvents="none" style={style} />;
+  const armLen = pos.size * 1.2;
+  const armThick = Math.max(1, pos.size * 0.18);
+
+  return (
+    <Animated.View pointerEvents="none" style={coreStyle}>
+      <View style={{
+        position: 'absolute',
+        left: (pos.size - armThick) / 2,
+        top: (pos.size - armLen) / 2,
+        width: armThick,
+        height: armLen,
+        borderRadius: armThick / 2,
+        backgroundColor: '#fff',
+        shadowColor: '#f0d38f',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
+      }} />
+      <View style={{
+        position: 'absolute',
+        left: (pos.size - armLen) / 2,
+        top: (pos.size - armThick) / 2,
+        width: armLen,
+        height: armThick,
+        borderRadius: armThick / 2,
+        backgroundColor: '#fff',
+        shadowColor: '#f0d38f',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
+      }} />
+      <View style={{
+        position: 'absolute',
+        left: (pos.size - pos.size * 0.4) / 2,
+        top: (pos.size - pos.size * 0.4) / 2,
+        width: pos.size * 0.4,
+        height: pos.size * 0.4,
+        borderRadius: pos.size * 0.2,
+        backgroundColor: '#fffbe8',
+      }} />
+    </Animated.View>
+  );
 }
 
 interface ConfettiPieceProps {
