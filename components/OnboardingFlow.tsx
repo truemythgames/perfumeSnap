@@ -26,6 +26,7 @@ import Animated, {
   interpolate,
   Extrapolation,
   runOnJS,
+  useAnimatedReaction,
   type SharedValue,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,6 +34,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import * as StoreReview from 'expo-store-review';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 import { Colors, Spacing, FontSizes, BorderRadius } from '../constants/theme';
 
@@ -59,6 +61,7 @@ const VALUATION_COUNT_STEPS = 40;
 const VALUATION_COUNT_INTERVAL_MS = 50;
 const VALUATION_COUNT_DURATION_MS = VALUATION_COUNT_STEPS * VALUATION_COUNT_INTERVAL_MS;
 const VALUATION_TO_COLLECTION_DELAY_MS = VALUATION_COUNT_DURATION_MS + CONFETTI_BURST_DURATION_MS + 250;
+const COLLECTION_TO_RATE_DELAY_MS = 4000;
 const COLLECTION_FRAME_TARGET_SCALE = 0.45;
 const COLLECTION_FRAME_BASE_WIDTH = SCREEN_WIDTH * 0.62;
 const COLLECTION_FRAME_BASE_HEIGHT = PHOTO_FRAME_HEIGHT;
@@ -124,6 +127,8 @@ const PERFUMES: Array<{ name: string; icon: IoniconsName; colors: [string, strin
 
 const FINAL_PERFUME_IMAGE = require('../assets/images/onboarding-video-lastframe.png');
 const ONBOARDING_VIDEO = require('../assets/videos/onboarding-intro.mp4');
+const LOADING_VIDEO = require('../assets/videos/loading-bg.mp4');
+const RATE_US_BG = require('../assets/images/rate-us-bg.png');
 const COLLECTION_CARD_IMAGES = [
   require('../assets/images/onboarding-perfume-3.png'),
   require('../assets/images/onboarding-perfume-6.png'),
@@ -139,9 +144,9 @@ type CollectionCardData = {
 };
 
 const COLLECTION_CARDS: CollectionCardData[] = [
-  { title: 'Amber Oud Reserve', family: 'Woody Oriental', price: '$420', image: FINAL_PERFUME_IMAGE },
-  { title: 'Velvet Rose Noir', family: 'Floral Amber', price: '$560', image: COLLECTION_CARD_IMAGES[1] },
-  { title: 'Marine Citrus Elixir', family: 'Fresh Citrus', price: '$340', image: COLLECTION_CARD_IMAGES[2] },
+  { title: 'Amber Oud Reserve', family: 'Woody Oriental', price: '$560', image: FINAL_PERFUME_IMAGE },
+  { title: 'Velvet Rose Noir', family: 'Floral Amber', price: '$385', image: COLLECTION_CARD_IMAGES[1] },
+  { title: 'Marine Citrus Elixir', family: 'Fresh Citrus', price: '$320', image: COLLECTION_CARD_IMAGES[2] },
 ];
 
 const CARD_WIDTH = 120;
@@ -492,6 +497,22 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const collectionFrameProgress = useSharedValue(0);
   const collectionLeadCardProgress = useSharedValue(0);
   const collectionMoreRowsProgress = useSharedValue(0);
+  const rateUsOpacity = useSharedValue(0);
+  const loadingOpacity = useSharedValue(0);
+  const loadingLine1 = useSharedValue(0);
+  const loadingLine2 = useSharedValue(0);
+  const loadingLine3 = useSharedValue(0);
+  const loadingTitleSlide = useSharedValue(0);
+  const loadingBtnOpacity = useSharedValue(0);
+  const loadingPercent = useSharedValue(0);
+  const [displayPercent, setDisplayPercent] = useState(0);
+
+  useAnimatedReaction(
+    () => Math.round(loadingPercent.value),
+    (val) => {
+      runOnJS(setDisplayPercent)(val);
+    },
+  );
 
   const onWelcomeLayout = useCallback(() => {
     SplashScreen.hideAsync();
@@ -575,6 +596,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
 
   const player = useVideoPlayer(ONBOARDING_VIDEO, (p) => {
     p.loop = false;
+    p.volume = 0;
+  });
+
+  const loadingPlayer = useVideoPlayer(LOADING_VIDEO, (p) => {
+    p.loop = false;
+    p.volume = 0;
   });
 
   useEventListener(player, 'playToEnd', () => {
@@ -898,6 +925,87 @@ export default function OnboardingFlow({ onComplete }: Props) {
     );
     recognitionContentOpacity.value = 0;
     recognitionContentOpacity.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+
+    const rateTimer = setTimeout(() => {
+      setStep(7);
+    }, COLLECTION_TO_RATE_DELAY_MS);
+
+    return () => clearTimeout(rateTimer);
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 7) return;
+    rateUsOpacity.value = 0;
+    rateUsOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) });
+    stepTitleSlide.value = 0;
+    stepSubtitleSlide.value = 0;
+    stepTitleSlide.value = withDelay(
+      200,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+    stepSubtitleSlide.value = withDelay(
+      400,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+
+    const reviewTimer = setTimeout(async () => {
+      try {
+        if (await StoreReview.hasAction()) {
+          await StoreReview.requestReview();
+        }
+      } catch {}
+    }, 800);
+
+    return () => clearTimeout(reviewTimer);
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 8) return;
+    loadingPlayer.currentTime = 0;
+    loadingPlayer.play();
+    loadingOpacity.value = 0;
+    loadingTitleSlide.value = 0;
+    loadingLine1.value = 0;
+    loadingLine2.value = 0;
+    loadingLine3.value = 0;
+
+    loadingPercent.value = 0;
+    loadingOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) });
+    loadingTitleSlide.value = withDelay(
+      200,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+    loadingPercent.value = withSequence(
+      withDelay(300, withTiming(30, { duration: 1600, easing: Easing.out(Easing.cubic) })),
+      withDelay(200, withTiming(65, { duration: 1600, easing: Easing.out(Easing.cubic) })),
+      withDelay(200, withTiming(100, { duration: 1600, easing: Easing.out(Easing.cubic) })),
+    );
+    loadingLine1.value = withDelay(
+      1200,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+    loadingLine2.value = withDelay(
+      3200,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+    loadingLine3.value = withDelay(
+      5000,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+    loadingBtnOpacity.value = withDelay(
+      6000,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+
+    const hapticInterval = setInterval(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    }, 200);
+    const hapticTimer = setTimeout(() => clearInterval(hapticInterval), 6000);
+
+    return () => {
+      clearInterval(hapticInterval);
+      clearTimeout(hapticTimer);
+    };
   }, [step]);
 
   const advanceTo = (next: number) => {
@@ -1063,6 +1171,42 @@ export default function OnboardingFlow({ onComplete }: Props) {
       { translateX: interpolate(stepSubtitleSlide.value, [0, 1], [40, 0]) },
     ],
   }));
+  const rateUsFade = useAnimatedStyle(() => ({
+    opacity: rateUsOpacity.value,
+  }));
+  const loadingFade = useAnimatedStyle(() => ({
+    opacity: loadingOpacity.value,
+  }));
+  const loadingTitleStyle = useAnimatedStyle(() => ({
+    opacity: loadingTitleSlide.value,
+    transform: [
+      { translateX: interpolate(loadingTitleSlide.value, [0, 1], [40, 0]) },
+    ],
+  }));
+  const loadingLine1Style = useAnimatedStyle(() => ({
+    opacity: loadingLine1.value,
+    transform: [
+      { translateX: interpolate(loadingLine1.value, [0, 1], [30, 0]) },
+    ],
+  }));
+  const loadingLine2Style = useAnimatedStyle(() => ({
+    opacity: loadingLine2.value,
+    transform: [
+      { translateX: interpolate(loadingLine2.value, [0, 1], [30, 0]) },
+    ],
+  }));
+  const loadingLine3Style = useAnimatedStyle(() => ({
+    opacity: loadingLine3.value,
+    transform: [
+      { translateX: interpolate(loadingLine3.value, [0, 1], [30, 0]) },
+    ],
+  }));
+  const loadingBtnStyle = useAnimatedStyle(() => ({
+    opacity: loadingBtnOpacity.value,
+  }));
+  const loadingBarWidth = useAnimatedStyle(() => ({
+    width: `${loadingPercent.value}%`,
+  }));
   const welcomeFrameGlowStyle = useAnimatedStyle(() => ({
     opacity: welcomeFrameGlow.value,
   }));
@@ -1090,7 +1234,8 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const isPostWelcomePhase = step >= 4;
   const isEasyPhotoPhase = step === 4;
   const isValuationPhase = step === 5;
-  const isCollectionPhase = step >= 6;
+  const isCollectionPhase = step === 6;
+  const isRatePhase = step === 7;
 
   return (
     <View style={st.root}>
@@ -1166,7 +1311,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       {/* ── Step 3: Final welcome with one perfume ── */}
       <Animated.View
         style={[st.layer, rateFade]}
-        pointerEvents={step === 3 || step === 4 || step === 5 || step === 6 ? 'auto' : 'none'}
+        pointerEvents={step >= 3 && step <= 7 ? 'auto' : 'none'}
       >
         <View style={st.finalScreen}>
           <View style={[st.finalHero, hasProcessingVisuals && st.processingHero, isCollectionPhase && st.collectionHero]}>
@@ -1335,6 +1480,99 @@ export default function OnboardingFlow({ onComplete }: Props) {
         style={sharedImageStyle}
         resizeMode="cover"
       />
+
+      {/* ── Step 7: Rate Us ── */}
+      {isRatePhase && (
+        <Animated.View
+          style={[st.layer, st.rateUsOverlay, rateUsFade, { paddingBottom: insets.bottom + Spacing.lg }]}
+          pointerEvents={isRatePhase ? 'auto' : 'none'}
+        >
+          <Image source={RATE_US_BG} style={st.rateUsBgImage} resizeMode="cover" />
+          <View style={st.rateUsBgOverlay} />
+          <View style={st.rateUsContent}>
+            <View style={st.starsRow}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Ionicons key={i} name="star" size={40} color="#d4a54a" />
+              ))}
+            </View>
+            <Animated.View style={stepTitleStyle}>
+              <Text style={st.rateUsTitle}>Love PerfumeSnap?</Text>
+            </Animated.View>
+            <Animated.View style={stepSubtitleStyle}>
+              <Text style={st.rateUsSubtitle}>
+                A quick review means the world to us!
+              </Text>
+            </Animated.View>
+          </View>
+          <TouchableOpacity
+            style={st.rateUsContinue}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setStep(8);
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={st.rateUsContinueTxt}>Continue</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
+      {/* ── Step 8: Personalization Loading ── */}
+      {step === 8 && (
+        <Animated.View
+          style={[st.layer, st.loadingOverlay, loadingFade, { paddingBottom: insets.bottom + Spacing.lg }]}
+          pointerEvents={step === 8 ? 'auto' : 'none'}
+        >
+          <View style={st.loadingVideoWrap}>
+            <VideoView
+              player={loadingPlayer}
+              contentFit="contain"
+              nativeControls={false}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <LinearGradient
+              colors={['transparent', '#000']}
+              start={{ x: 0.5, y: 0.7 }}
+              end={{ x: 0.5, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+          </View>
+          <View style={st.loadingCenter}>
+            <Text style={st.loadingPercentBig}>{displayPercent}%</Text>
+            <Animated.View style={loadingTitleStyle}>
+              <Text style={st.loadingTitle}>
+                Creating your personal{'\n'}perfume collecting journey...
+              </Text>
+            </Animated.View>
+            <View style={st.loadingLines}>
+              <Animated.View style={[st.loadingLineRow, loadingLine1Style]}>
+                <Ionicons name="checkmark-circle" size={20} color="#d4a54a" />
+                <Text style={st.loadingLineText}>Building your collector profile...</Text>
+              </Animated.View>
+              <Animated.View style={[st.loadingLineRow, loadingLine2Style]}>
+                <Ionicons name="checkmark-circle" size={20} color="#d4a54a" />
+                <Text style={st.loadingLineText}>Sizing tools to your collection...</Text>
+              </Animated.View>
+              <Animated.View style={[st.loadingLineRow, loadingLine3Style]}>
+                <Ionicons name="checkmark-circle" size={20} color="#d4a54a" />
+                <Text style={st.loadingLineText}>Focusing features on your goals...</Text>
+              </Animated.View>
+            </View>
+          </View>
+          <Animated.View style={loadingBtnStyle}>
+            <TouchableOpacity
+              style={st.loadingContinueBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onComplete();
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={st.loadingContinueTxt}>Continue</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+      )}
 
       {/* ── Welcome Overlay (white, on top – matches native splash) ── */}
       <Animated.View
@@ -1811,12 +2049,125 @@ const st = StyleSheet.create({
   },
 
   /* ── Rate us ── */
-  starsRow: { flexDirection: 'row', gap: 8, marginBottom: Spacing.lg },
-  skip: {
-    color: Colors.textMuted,
+  rateUsOverlay: {
+    backgroundColor: '#000',
+  },
+  rateUsBgImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  rateUsBgOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  rateUsContent: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    flex: 1,
+    justifyContent: 'flex-start',
+    paddingTop: SCREEN_HEIGHT * 0.15,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  rateUsTitle: {
+    fontFamily: 'PlayfairDisplay',
+    fontSize: 28,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  rateUsSubtitle: {
     fontSize: FontSizes.md,
-    fontWeight: '500',
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.sm,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  rateUsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#d4a54a',
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: BorderRadius.full,
+    marginBottom: 16,
+  },
+  rateUsBtnTxt: {
+    color: '#fff',
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
+  },
+  rateUsContinue: {
+    backgroundColor: '#9a7b4f',
+    borderRadius: BorderRadius.xl,
+    paddingVertical: 18,
+    marginHorizontal: 24,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  rateUsContinueTxt: {
+    color: '#fff',
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
+  },
+
+  /* ── Loading / Personalization ── */
+  loadingOverlay: {
+    backgroundColor: '#000',
+  },
+  loadingVideoWrap: {
+    height: SCREEN_HEIGHT * 0.4,
+    overflow: 'hidden',
+  },
+  loadingCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  loadingPercentBig: {
+    fontFamily: 'PlayfairDisplay',
+    fontSize: 64,
+    color: '#d4a54a',
+    fontWeight: '700',
+    marginBottom: 24,
+  },
+  loadingTitle: {
+    fontFamily: 'PlayfairDisplay',
+    fontSize: 24,
+    color: '#fff',
+    marginBottom: 28,
+    lineHeight: 34,
+    textAlign: 'center',
+  },
+  loadingLines: {
+    gap: 18,
+    alignSelf: 'flex-start',
+  },
+  loadingLineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingLineText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: FontSizes.md,
+  },
+  loadingContinueBtn: {
+    backgroundColor: '#9a7b4f',
+    borderRadius: BorderRadius.xl,
+    paddingVertical: 18,
+    marginHorizontal: 24,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  loadingContinueTxt: {
+    color: '#fff',
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
   },
 });
