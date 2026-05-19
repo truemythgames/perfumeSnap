@@ -9,6 +9,8 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEventListener } from 'expo';
 import * as SplashScreen from 'expo-splash-screen';
 import Animated, {
   useSharedValue,
@@ -40,16 +42,12 @@ const LOGO_SIZE = 319;
 
 const TERMS_URL = 'https://perfumesnap.app/terms';
 const PRIVACY_URL = 'https://perfumesnap.app/privacy';
-const FLASH_STEP_START_MS = 420;
-const FLASH_STEP_END_MS = 90;
-const FLASH_TO_FINAL_DELAY_MS = 0;
-const LAST_FLASH_FRAME_HOLD_MS = 420;
 const WELCOME_HOLD_MS = 0;
 const PHOTO_SETTLE_BEFORE_FRAME_MS = 220;
 const WELCOME_FRAME_FADE_MS = 1800;
-const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS + 2000;
+const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS + 1000;
 const FINAL_IMAGE_START_Y = 210;
-const IMAGE_TRANSITION_MS = 900;
+const IMAGE_TRANSITION_MS = 1200;
 const TOP_SECTION_HEIGHT = SCREEN_HEIGHT * 0.54;
 const PHOTO_FRAME_HEIGHT = SCREEN_WIDTH * 0.82;
 const SHINE_SWEEP_HEIGHT = SCREEN_HEIGHT * 0.5;
@@ -57,6 +55,29 @@ const EASY_TO_VALUATION_DELAY_MS = 8000;
 const VALUATION_TARGET_PRICE = 560;
 const CONFETTI_BURST_DURATION_MS = 1500;
 const CONFETTI_FADE_OUT_MS = 320;
+const VALUATION_COUNT_STEPS = 40;
+const VALUATION_COUNT_INTERVAL_MS = 50;
+const VALUATION_COUNT_DURATION_MS = VALUATION_COUNT_STEPS * VALUATION_COUNT_INTERVAL_MS;
+const VALUATION_TO_COLLECTION_DELAY_MS = VALUATION_COUNT_DURATION_MS + CONFETTI_BURST_DURATION_MS + 250;
+const COLLECTION_FRAME_TARGET_SCALE = 0.45;
+const COLLECTION_FRAME_BASE_WIDTH = SCREEN_WIDTH * 0.62;
+const COLLECTION_FRAME_BASE_HEIGHT = PHOTO_FRAME_HEIGHT;
+const COLLECTION_FRAME_TARGET_WIDTH = COLLECTION_FRAME_BASE_WIDTH * COLLECTION_FRAME_TARGET_SCALE;
+const COLLECTION_FRAME_TARGET_HEIGHT = COLLECTION_FRAME_BASE_HEIGHT * COLLECTION_FRAME_TARGET_SCALE;
+const COLLECTION_SLIDE_FRAME_WIDTH = COLLECTION_FRAME_TARGET_WIDTH;
+const COLLECTION_SLIDE_FRAME_HEIGHT = COLLECTION_FRAME_TARGET_HEIGHT;
+const COLLECTION_ROW_LEFT = 24;
+const COLLECTION_FRAME_TARGET_TX =
+  COLLECTION_ROW_LEFT -
+  (SCREEN_WIDTH - COLLECTION_FRAME_BASE_WIDTH) / 2 -
+  (COLLECTION_FRAME_BASE_WIDTH * (1 - COLLECTION_FRAME_TARGET_SCALE)) / 2;
+const COLLECTION_FRAME_TARGET_TY = -TOP_SECTION_HEIGHT * 0.18;
+const COLLECTION_FRAME_TARGET_TOP =
+  (TOP_SECTION_HEIGHT - COLLECTION_FRAME_BASE_HEIGHT) / 2 +
+  COLLECTION_FRAME_TARGET_TY +
+  (COLLECTION_FRAME_BASE_HEIGHT * (1 - COLLECTION_FRAME_TARGET_SCALE)) / 2;
+const COLLECTION_FIRST_ROW_TOP = COLLECTION_FRAME_TARGET_TOP - 5;
+const COLLECTION_ROW_SPACING = COLLECTION_SLIDE_FRAME_HEIGHT * 0.82;
 const CONFETTI_COLORS = ['#f0d38f', '#d9b46a', '#fff2cd', '#c99745', '#e7c27a', '#f6e0aa', '#d3a250'];
 const CONFETTI_COUNT = 92;
 
@@ -77,9 +98,9 @@ type ConfettiPieceConfig = {
 const CONFETTI_PIECES: ConfettiPieceConfig[] = Array.from({ length: CONFETTI_COUNT }, (_, i) => ({
   startX: 8 + Math.random() * (SCREEN_WIDTH - 16),
   startY: TOP_SECTION_HEIGHT * (0.84 + Math.random() * 0.14),
-  driftX: (Math.random() - 0.5) * 170,
-  up: 140 + Math.random() * 200,
-  gravity: 140 + Math.random() * 250,
+  driftX: (Math.random() - 0.5) * 120,
+  up: 95 + Math.random() * 135,
+  gravity: 90 + Math.random() * 130,
   size: 4 + Math.random() * 6,
   stretch: 0.55 + Math.random() * 0.7,
   roundness: Math.random() > 0.55 ? 999 : 1.5 + Math.random() * 3,
@@ -101,21 +122,27 @@ const PERFUMES: Array<{ name: string; icon: IoniconsName; colors: [string, strin
   { name: 'Spicy', icon: 'flame-outline', colors: ['#CD5C5C', '#A04040'] },
 ];
 
-const FLASH_PERFUME_IMAGES = [
-  require('../assets/images/onboarding-perfume-2.png'),
+const FINAL_PERFUME_IMAGE = require('../assets/images/onboarding-video-lastframe.png');
+const ONBOARDING_VIDEO = require('../assets/videos/onboarding-intro.mp4');
+const COLLECTION_CARD_IMAGES = [
   require('../assets/images/onboarding-perfume-3.png'),
-  require('../assets/images/onboarding-perfume-4.png'),
-  require('../assets/images/onboarding-perfume-5.png'),
   require('../assets/images/onboarding-perfume-6.png'),
-  require('../assets/images/onboarding-perfume-7.png'),
-  require('../assets/images/onboarding-perfume-8.png'),
   require('../assets/images/onboarding-perfume-9.png'),
-  require('../assets/images/onboarding-perfume-10.png'),
-  require('../assets/images/onboarding-perfume-11.png'),
   require('../assets/images/onboarding-perfume-12.png'),
-  require('../assets/images/onboarding-perfume-1.png'),
 ];
-const FINAL_PERFUME_IMAGE = require('../assets/images/onboarding-perfume-1.png');
+
+type CollectionCardData = {
+  title: string;
+  family: string;
+  price: string;
+  image: number;
+};
+
+const COLLECTION_CARDS: CollectionCardData[] = [
+  { title: 'Amber Oud Reserve', family: 'Woody Oriental', price: '$420', image: FINAL_PERFUME_IMAGE },
+  { title: 'Velvet Rose Noir', family: 'Floral Amber', price: '$560', image: COLLECTION_CARD_IMAGES[1] },
+  { title: 'Marine Citrus Elixir', family: 'Fresh Citrus', price: '$340', image: COLLECTION_CARD_IMAGES[2] },
+];
 
 const CARD_WIDTH = 120;
 const CARD_GAP = 12;
@@ -190,6 +217,66 @@ function Particle({ initialDelay }: ParticleProps) {
   );
 }
 
+const WELCOME_SPARKLE_COUNT = 14;
+type SparkleConfig = { x: number; y: number; size: number; delay: number; duration: number };
+const WELCOME_SPARKLES: SparkleConfig[] = Array.from({ length: WELCOME_SPARKLE_COUNT }, () => ({
+  x: 0.08 + Math.random() * 0.84,
+  y: 0.08 + Math.random() * 0.84,
+  size: 2.5 + Math.random() * 3.5,
+  delay: Math.random() * 1200,
+  duration: 600 + Math.random() * 800,
+}));
+
+function WelcomeSparkle({ config }: { config: SparkleConfig }) {
+  const opacity = useSharedValue(0);
+  const [pos, setPos] = useState({ x: config.x, y: config.y, size: config.size });
+  const mounted = useRef(true);
+
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  const respawn = useCallback(() => {
+    if (!mounted.current) return;
+    setPos({
+      x: 0.06 + Math.random() * 0.88,
+      y: 0.06 + Math.random() * 0.88,
+      size: 2 + Math.random() * 4,
+    });
+  }, []);
+
+  useEffect(() => {
+    const dur = 500 + Math.random() * 900;
+    const pause = 200 + Math.random() * 600;
+    const timer = setTimeout(() => {
+      opacity.value = withSequence(
+        withTiming(1, { duration: dur * 0.35, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: dur * 0.65, easing: Easing.in(Easing.quad) }),
+        withDelay(pause, withTiming(0, { duration: 1 })),
+      );
+      setTimeout(() => {
+        if (mounted.current) respawn();
+      }, dur + pause);
+    }, config.delay);
+    return () => clearTimeout(timer);
+  }, [pos]);
+
+  const style = useAnimatedStyle(() => ({
+    position: 'absolute' as const,
+    left: `${pos.x * 100}%`,
+    top: `${pos.y * 100}%`,
+    width: pos.size,
+    height: pos.size,
+    borderRadius: pos.size / 2,
+    backgroundColor: '#fff',
+    opacity: opacity.value,
+    shadowColor: '#f0d38f',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+  }));
+
+  return <Animated.View pointerEvents="none" style={style} />;
+}
+
 interface ConfettiPieceProps {
   config: ConfettiPieceConfig;
   progress: SharedValue<number>;
@@ -210,7 +297,7 @@ function ConfettiPiece({ config, progress, opacity }: ConfettiPieceProps) {
     height: config.size * config.stretch,
     borderRadius: config.roundness,
     backgroundColor: config.color,
-    opacity: opacity.value * interpolate(localProgress.value, [0, 0.1, 0.82, 1], [0, 1, 1, 0]),
+    opacity: opacity.value * interpolate(localProgress.value, [0, 0.06, 0.95, 1], [0, 1, 1, 0]),
     transform: [
       { translateX: config.driftX * localProgress.value },
       {
@@ -235,10 +322,84 @@ interface Props {
   onComplete: () => void;
 }
 
+interface SlidingCollectionRowProps {
+  card: CollectionCardData;
+  index: number;
+  progress: SharedValue<number>;
+  isLead?: boolean;
+}
+
+function SlidingCollectionRow({ card, index, progress, isLead }: SlidingCollectionRowProps) {
+  const style = useAnimatedStyle(() => {
+    if (isLead) {
+      return { opacity: progress.value };
+    }
+    const slideIdx = index - 1;
+    const start = slideIdx * 0.45;
+    const end = start + 0.55;
+    const local = interpolate(progress.value, [start, end], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: local,
+      transform: [
+        { translateX: interpolate(local, [0, 1], [SCREEN_WIDTH * 0.66, 0]) },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        st.collectionSlideRow,
+        { top: COLLECTION_FIRST_ROW_TOP + index * COLLECTION_ROW_SPACING, zIndex: index },
+        style,
+      ]}
+    >
+      <View style={st.collectionSlidePhotoOuter}>
+        <View
+          style={{
+            width: COLLECTION_FRAME_BASE_WIDTH,
+            height: COLLECTION_FRAME_BASE_HEIGHT,
+            position: 'absolute',
+            left: (COLLECTION_SLIDE_FRAME_WIDTH - COLLECTION_FRAME_BASE_WIDTH) / 2,
+            top: (COLLECTION_SLIDE_FRAME_HEIGHT - COLLECTION_FRAME_BASE_HEIGHT) / 2,
+            transform: [{ scale: COLLECTION_FRAME_TARGET_SCALE }],
+          }}
+        >
+          <View style={st.frameBorderOuter}>
+            <LinearGradient
+              colors={['#dcc07a', '#c4a060', '#8a6e30']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={st.frameGradientOuter}
+            >
+              <View style={st.frameInset}>
+                <LinearGradient
+                  colors={['#8a6e30', '#b8953e', '#dcc07a']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={st.frameGradientInner}
+                >
+                  <View style={st.photoClip}>
+                    <Image source={card.image} style={st.photoFrameImage} />
+                  </View>
+                </LinearGradient>
+              </View>
+            </LinearGradient>
+          </View>
+        </View>
+      </View>
+      <View style={st.collectionSlideInfo}>
+        <Text style={st.collectionTitle} numberOfLines={1}>{card.title}</Text>
+        <Text style={st.collectionFamily} numberOfLines={1}>{card.family}</Text>
+        <Text style={st.collectionPrice}>{card.price}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function OnboardingFlow({ onComplete }: Props) {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
-  const [flashImageIndex, setFlashImageIndex] = useState(0);
   const [isImageTransitioning, setIsImageTransitioning] = useState(false);
   const [showFinalImage, setShowFinalImage] = useState(false);
   const [showWelcomeFrameIntro, setShowWelcomeFrameIntro] = useState(false);
@@ -280,8 +441,13 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const valuationTagScale = useSharedValue(0.94);
   const sealOpacity = useSharedValue(1);
   const welcomeFrameGlow = useSharedValue(0);
+  const welcomeTitleSlide = useSharedValue(0);
+  const welcomeSubtitleSlide = useSharedValue(0);
   const confettiProgress = useSharedValue(0);
   const confettiOpacity = useSharedValue(0);
+  const collectionFrameProgress = useSharedValue(0);
+  const collectionLeadCardProgress = useSharedValue(0);
+  const collectionMoreRowsProgress = useSharedValue(0);
 
   const onWelcomeLayout = useCallback(() => {
     SplashScreen.hideAsync();
@@ -363,56 +529,37 @@ export default function OnboardingFlow({ onComplete }: Props) {
     };
   }, [step]);
 
-  useEffect(() => {
-    if (step !== 1) return;
+  const player = useVideoPlayer(ONBOARDING_VIDEO, (p) => {
+    p.loop = false;
+  });
 
-    let index = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    setFlashImageIndex(0);
+  useEventListener(player, 'playToEnd', () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsImageTransitioning(true);
+    setShowFinalImage(false);
+    setShowWelcomeFrameIntro(false);
+    welcomeFrameReveal.value = 0;
+    sharedImageProgress.value = 0;
+    setStep(3);
+    carouselOpacity.value = withTiming(0, { duration: 300 });
+    rateOpacity.value = 1;
+    sharedImageProgress.value = withTiming(
+      1,
+      { duration: IMAGE_TRANSITION_MS, easing: Easing.bezier(0.25, 0.1, 0.25, 1) },
+      (finished) => {
+        if (finished) {
+          runOnJS(setIsImageTransitioning)(false);
+          runOnJS(setShowFinalImage)(true);
+        }
+      },
+    );
+  });
 
-    const showNext = () => {
-      index += 1;
-      if (index >= FLASH_PERFUME_IMAGES.length) {
-        timer = setTimeout(() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setIsImageTransitioning(true);
-          setShowFinalImage(false);
-          setShowWelcomeFrameIntro(false);
-          welcomeFrameReveal.value = 0;
-          sharedImageProgress.value = 0;
-          setStep(3);
-          carouselOpacity.value = withTiming(0, { duration: IMAGE_TRANSITION_MS });
-          rateOpacity.value = 1;
-          sharedImageProgress.value = withTiming(
-            1,
-            { duration: IMAGE_TRANSITION_MS, easing: Easing.out(Easing.cubic) },
-            (finished) => {
-              if (finished) {
-                runOnJS(setIsImageTransitioning)(false);
-                runOnJS(setShowFinalImage)(true);
-              }
-            },
-          );
-        }, FLASH_TO_FINAL_DELAY_MS + LAST_FLASH_FRAME_HOLD_MS);
-        return;
-      }
-
-      setFlashImageIndex(index);
-      Haptics.selectionAsync();
-
-      const progress = index / Math.max(1, FLASH_PERFUME_IMAGES.length - 1);
-      const nextDelay = Math.round(
-        FLASH_STEP_START_MS - (FLASH_STEP_START_MS - FLASH_STEP_END_MS) * progress,
-      );
-      timer = setTimeout(showNext, nextDelay);
-    };
-
-    timer = setTimeout(showNext, FLASH_STEP_START_MS);
-
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
+  useEffect(() => {
+    if (step === 1) {
+      player.currentTime = 0;
+      player.play();
+    }
   }, [step]);
 
   useEffect(() => {
@@ -426,6 +573,9 @@ export default function OnboardingFlow({ onComplete }: Props) {
     valuationTagScale.value = 0.94;
     confettiProgress.value = 0;
     confettiOpacity.value = 0;
+    collectionFrameProgress.value = 0;
+    collectionLeadCardProgress.value = 0;
+    collectionMoreRowsProgress.value = 0;
     setValuationPrice(VALUATION_TARGET_PRICE);
     sealOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
     cancelAnimation(finalImageTranslateY);
@@ -476,11 +626,22 @@ export default function OnboardingFlow({ onComplete }: Props) {
     welcomeFrameReveal.value = 0;
     let nextTimer: ReturnType<typeof setTimeout> | null = null;
 
+    welcomeTitleSlide.value = 0;
+    welcomeSubtitleSlide.value = 0;
+
     const frameTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
       welcomeFrameReveal.value = withTiming(1, {
         duration: WELCOME_FRAME_FADE_MS,
         easing: Easing.out(Easing.cubic),
       });
+      welcomeTitleSlide.value = withDelay(
+        200,
+        withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
+      );
+      welcomeSubtitleSlide.value = withDelay(
+        450,
+        withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
+      );
       nextTimer = setTimeout(
         () => advanceTo(4),
         WELCOME_TO_RECOGNITION_DELAY_MS,
@@ -514,6 +675,9 @@ export default function OnboardingFlow({ onComplete }: Props) {
     valuationTagTranslateY.value = 10;
     confettiProgress.value = 0;
     confettiOpacity.value = 0;
+    collectionFrameProgress.value = 0;
+    collectionLeadCardProgress.value = 0;
+    collectionMoreRowsProgress.value = 0;
     processingBgOpacity.value = withTiming(1, { duration: 700, easing: Easing.out(Easing.cubic) });
     if (!showWelcomeFrameIntro) {
       processingFrameReveal.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
@@ -531,16 +695,16 @@ export default function OnboardingFlow({ onComplete }: Props) {
       false,
     );
     processingFrameRotate.value = withDelay(
-      850,
-      withTiming(-0.6, { duration: 900, easing: Easing.inOut(Easing.cubic) }),
+      600,
+      withTiming(-1.5, { duration: 500, easing: Easing.out(Easing.quad) }),
     );
     tiltTimer = setTimeout(() => {
       processingFrameRotate.value = withRepeat(
-        withTiming(0.95, { duration: 4200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1.5, { duration: 3500, easing: Easing.inOut(Easing.ease) }),
         -1,
         true,
       );
-    }, 1900);
+    }, 1300);
     valuationTimer = setTimeout(() => {
       setStep(5);
     }, EASY_TO_VALUATION_DELAY_MS);
@@ -557,9 +721,10 @@ export default function OnboardingFlow({ onComplete }: Props) {
     if (step !== 5) return;
 
     const startPrice = 470;
-    const steps = 40;
-    const intervalMs = 50;
+    const steps = VALUATION_COUNT_STEPS;
+    const intervalMs = VALUATION_COUNT_INTERVAL_MS;
     let tick = 0;
+    let collectionTimer: ReturnType<typeof setTimeout> | null = null;
     const priceTimer: ReturnType<typeof setInterval> = setInterval(() => {
       tick += 1;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
@@ -569,7 +734,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
         confettiOpacity.value = 1;
         confettiProgress.value = withTiming(1, {
           duration: CONFETTI_BURST_DURATION_MS,
-          easing: Easing.out(Easing.cubic),
+          easing: Easing.linear,
         });
         confettiOpacity.value = withSequence(
           withTiming(1, { duration: 1 }),
@@ -631,9 +796,31 @@ export default function OnboardingFlow({ onComplete }: Props) {
         ),
       ),
     );
+    collectionTimer = setTimeout(() => {
+      setStep(6);
+    }, VALUATION_TO_COLLECTION_DELAY_MS);
     return () => {
       clearInterval(priceTimer);
+      if (collectionTimer) clearTimeout(collectionTimer);
     };
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 6) return;
+    collectionFrameProgress.value = 0;
+    collectionLeadCardProgress.value = 0;
+    collectionMoreRowsProgress.value = 0;
+    collectionFrameProgress.value = withTiming(1, { duration: 820, easing: Easing.out(Easing.cubic) });
+    collectionLeadCardProgress.value = withDelay(
+      830,
+      withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) }),
+    );
+    collectionMoreRowsProgress.value = withDelay(
+      980,
+      withTiming(1, { duration: 1600, easing: Easing.out(Easing.cubic) }),
+    );
+    recognitionContentOpacity.value = 0;
+    recognitionContentOpacity.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
   }, [step]);
 
   const advanceTo = (next: number) => {
@@ -724,22 +911,25 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const finalContentRevealStyle = useAnimatedStyle(() => ({
     opacity: finalContentOpacity.value,
   }));
-  const sharedStartWidth = SCREEN_WIDTH - Spacing.lg * 2;
-  const sharedStartHeight = SCREEN_HEIGHT * 0.82;
-  const sharedStartX = Spacing.lg;
-  const sharedStartY = (SCREEN_HEIGHT - sharedStartHeight) / 2;
+  const sharedStartWidth = SCREEN_WIDTH;
+  const sharedStartHeight = SCREEN_HEIGHT;
+  const sharedStartX = 0;
+  const sharedStartY = 0;
   const sharedEndWidth = SCREEN_WIDTH * 0.62;
   const sharedEndHeight = SCREEN_WIDTH * 0.82;
   const sharedEndX = (SCREEN_WIDTH - sharedEndWidth) / 2;
   const sharedEndY = (SCREEN_HEIGHT * 0.54 - sharedEndHeight) / 2;
-  const sharedImageStyle = useAnimatedStyle(() => ({
-    position: 'absolute',
-    left: interpolate(sharedImageProgress.value, [0, 1], [sharedStartX, sharedEndX]),
-    top: interpolate(sharedImageProgress.value, [0, 1], [sharedStartY, sharedEndY]),
-    width: interpolate(sharedImageProgress.value, [0, 1], [sharedStartWidth, sharedEndWidth]),
-    height: interpolate(sharedImageProgress.value, [0, 1], [sharedStartHeight, sharedEndHeight]),
-    borderRadius: interpolate(sharedImageProgress.value, [0, 1], [BorderRadius.lg, BorderRadius.md]),
-  }));
+  const sharedImageStyle = useAnimatedStyle(() => {
+    const p = sharedImageProgress.value;
+    return {
+      position: 'absolute',
+      left: interpolate(p, [0, 0.15, 1], [sharedStartX, sharedStartX, sharedEndX], Extrapolation.CLAMP),
+      top: interpolate(p, [0, 0.15, 1], [sharedStartY, sharedStartY, sharedEndY], Extrapolation.CLAMP),
+      width: interpolate(p, [0, 0.15, 1], [sharedStartWidth, sharedStartWidth, sharedEndWidth], Extrapolation.CLAMP),
+      height: interpolate(p, [0, 0.15, 1], [sharedStartHeight, sharedStartHeight, sharedEndHeight], Extrapolation.CLAMP),
+      borderRadius: interpolate(p, [0, 0.15, 1], [0, 0, BorderRadius.md], Extrapolation.CLAMP),
+    };
+  });
   const processingBgStyle = useAnimatedStyle(() => ({
     opacity: processingBgOpacity.value,
   }));
@@ -771,8 +961,29 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const sealStyle = useAnimatedStyle(() => ({
     opacity: sealOpacity.value,
   }));
+  const welcomeTitleStyle = useAnimatedStyle(() => ({
+    opacity: welcomeTitleSlide.value,
+    transform: [
+      { translateY: interpolate(welcomeTitleSlide.value, [0, 1], [18, 0]) },
+    ],
+  }));
+  const welcomeSubtitleStyle = useAnimatedStyle(() => ({
+    opacity: welcomeSubtitleSlide.value,
+    transform: [
+      { translateY: interpolate(welcomeSubtitleSlide.value, [0, 1], [14, 0]) },
+    ],
+  }));
   const welcomeFrameGlowStyle = useAnimatedStyle(() => ({
     opacity: welcomeFrameGlow.value,
+  }));
+  const collectionFrameMoveStyle = useAnimatedStyle(() => ({
+    opacity: 1,
+    transform: [
+      { translateX: interpolate(collectionFrameProgress.value, [0, 1], [0, COLLECTION_FRAME_TARGET_TX]) },
+      { translateY: interpolate(collectionFrameProgress.value, [0, 1], [0, COLLECTION_FRAME_TARGET_TY]) },
+      { scale: interpolate(collectionFrameProgress.value, [0, 1], [1, COLLECTION_FRAME_TARGET_SCALE]) },
+      { rotate: `${interpolate(collectionFrameProgress.value, [0, 1], [0, -2])}deg` },
+    ],
   }));
 
   const tripleCards = [...PERFUMES, ...PERFUMES, ...PERFUMES];
@@ -785,26 +996,27 @@ export default function OnboardingFlow({ onComplete }: Props) {
     </View>
   );
 
-  const hasProcessingVisuals = step >= 4;
+  const hasProcessingVisuals = step >= 4 && step <= 5;
+  const isPostWelcomePhase = step >= 4;
   const isEasyPhotoPhase = step === 4;
-  const isValuationPhase = step >= 5;
+  const isValuationPhase = step === 5;
+  const isCollectionPhase = step >= 6;
 
   return (
     <View style={st.root}>
       <StatusBar style={step === 0 ? 'dark' : 'light'} />
 
-      {/* ── Step 1: Perfume Flash (auto) ── */}
+      {/* ── Step 1: Intro Video (auto) ── */}
       <Animated.View
         style={[st.layer, carouselFade]}
         pointerEvents={step === 1 ? 'auto' : 'none'}
       >
-        <View style={st.flashContainer}>
-          <Image
-            source={FLASH_PERFUME_IMAGES[flashImageIndex]}
-            style={st.flashImage}
-            resizeMode="cover"
-          />
-        </View>
+        <VideoView
+          player={player}
+          contentFit="cover"
+          nativeControls={false}
+          style={st.introVideo}
+        />
       </Animated.View>
 
       {/* ── Step 2: Snap Demo ── */}
@@ -864,10 +1076,10 @@ export default function OnboardingFlow({ onComplete }: Props) {
       {/* ── Step 3: Final welcome with one perfume ── */}
       <Animated.View
         style={[st.layer, rateFade]}
-        pointerEvents={step === 3 || step === 4 || step === 5 ? 'auto' : 'none'}
+        pointerEvents={step === 3 || step === 4 || step === 5 || step === 6 ? 'auto' : 'none'}
       >
         <View style={st.finalScreen}>
-          <View style={[st.finalHero, hasProcessingVisuals && st.processingHero]}>
+          <View style={[st.finalHero, hasProcessingVisuals && st.processingHero, isCollectionPhase && st.collectionHero]}>
             {hasProcessingVisuals && (
               <Animated.View style={[st.processingBackgroundOverlay, processingBgStyle]}>
                 <LinearGradient
@@ -886,24 +1098,28 @@ export default function OnboardingFlow({ onComplete }: Props) {
               </Animated.View>
             )}
 
-            <Animated.View
-              style={[
-                finalImageMoveStyle,
-              ]}
-            >
-              <Image
-                source={FINAL_PERFUME_IMAGE}
-                style={[st.finalPerfumeImage, (!showFinalImage || isImageTransitioning) && st.hiddenImage]}
-                resizeMode="cover"
-              />
-            </Animated.View>
+            {!isCollectionPhase && (
+              <Animated.View
+                style={[
+                  finalImageMoveStyle,
+                ]}
+              >
+                <Image
+                  source={FINAL_PERFUME_IMAGE}
+                  style={[st.finalPerfumeImage, (!showFinalImage || isImageTransitioning) && st.hiddenImage]}
+                  resizeMode="cover"
+                />
+              </Animated.View>
+            )}
 
-            {(showWelcomeFrameIntro || hasProcessingVisuals) && (
+            {(showWelcomeFrameIntro || hasProcessingVisuals || isCollectionPhase) && (
               <Animated.View
                 style={[
                   st.processingFrameWrap,
                   st.welcomeFrameWrap,
-                  hasProcessingVisuals ? processingFrameAnimStyle : welcomeFrameIntroStyle,
+                  isCollectionPhase
+                    ? collectionFrameMoveStyle
+                    : (hasProcessingVisuals ? processingFrameAnimStyle : welcomeFrameIntroStyle),
                 ]}
               >
                 <View style={st.frameBorderOuter}>
@@ -922,6 +1138,11 @@ export default function OnboardingFlow({ onComplete }: Props) {
                       >
                         <View style={st.photoClip}>
                           <Image source={FINAL_PERFUME_IMAGE} style={st.photoFrameImage} />
+                          {step === 3 && !isImageTransitioning &&
+                            WELCOME_SPARKLES.map((sparkle, i) => (
+                              <WelcomeSparkle key={`welcome-sparkle-${i}`} config={sparkle} />
+                            ))
+                          }
                           {isEasyPhotoPhase && (
                             <Animated.View style={[st.shineSweep, shineSweepStyle]} pointerEvents="none">
                               <LinearGradient
@@ -946,10 +1167,23 @@ export default function OnboardingFlow({ onComplete }: Props) {
                     </View>
                   </LinearGradient>
                 </View>
-                {!hasProcessingVisuals && (
+                {!hasProcessingVisuals && !isCollectionPhase && (
                   <Animated.View style={[st.welcomeFrameGlow, welcomeFrameGlowStyle]} pointerEvents="none" />
                 )}
               </Animated.View>
+            )}
+            {isCollectionPhase && (
+              <>
+                {COLLECTION_CARDS.map((card, idx) => (
+                  <SlidingCollectionRow
+                    key={`collection-row-${idx}`}
+                    card={card}
+                    index={idx}
+                    progress={idx === 0 ? collectionLeadCardProgress : collectionMoreRowsProgress}
+                    isLead={idx === 0}
+                  />
+                ))}
+              </>
             )}
             {isValuationPhase && (
               <Animated.View style={[st.valuationTag, valuationTagStyle]}>
@@ -969,33 +1203,38 @@ export default function OnboardingFlow({ onComplete }: Props) {
                 ))}
               </View>
             )}
-            <Animated.View style={[st.seal, sealStyle]}>
-              <Ionicons name="sparkles" size={20} color="#f7eddc" />
-            </Animated.View>
           </View>
           <Animated.View
             style={[
               st.finalContent,
-              hasProcessingVisuals ? recognitionContentStyle : finalContentRevealStyle,
+              isPostWelcomePhase ? recognitionContentStyle : finalContentRevealStyle,
             ]}
           >
-            <Text style={st.finalTitle}>
-              {isValuationPhase
-                ? 'Get Perfume Valuations'
-                : (isEasyPhotoPhase ? 'Easy Photo Recognition' : `Welcome To\nPerfumeSnap`)}
-            </Text>
-            <Text style={st.finalSubtitle}>
-              {isValuationPhase
-                ? 'Dive Into The details Of Each Perfume And Receive A Professional Market Valuation.'
-                : (isEasyPhotoPhase
-                    ? 'Simply Snap A Picture To Get Detailed Information And Valuation'
-                    : 'Discover The Hidden Value Of Your Perfume Collection With A Simple Photo')}
-            </Text>
+            <Animated.View style={!isPostWelcomePhase ? welcomeTitleStyle : undefined}>
+              <Text style={st.finalTitle}>
+                {isCollectionPhase
+                  ? 'Build Your Personal Collection'
+                  : (isValuationPhase
+                  ? 'Get Perfume Valuations'
+                  : (isEasyPhotoPhase ? 'Easy Photo Recognition' : `Welcome To\nPerfumeSnap`))}
+              </Text>
+            </Animated.View>
+            <Animated.View style={!isPostWelcomePhase ? welcomeSubtitleStyle : undefined}>
+              <Text style={st.finalSubtitle}>
+                {isCollectionPhase
+                  ? 'Save Your Results And Receive Personalized\nSuggestions based on your preferences.'
+                  : (isValuationPhase
+                  ? 'Dive Into The details Of Each Perfume And Receive A Professional Market Valuation.'
+                  : (isEasyPhotoPhase
+                      ? 'Simply Snap A Picture To Get Detailed Information And Valuation'
+                      : 'Discover The Hidden Value Of Your Perfume Collection With A Simple Photo'))}
+              </Text>
+            </Animated.View>
             <View style={st.finalProgressRow}>
-              <View style={[st.finalProgressBar, !hasProcessingVisuals && st.finalProgressBarActive]} />
+              <View style={[st.finalProgressBar, !isPostWelcomePhase && st.finalProgressBarActive]} />
               <View style={[st.finalProgressBar, isEasyPhotoPhase && st.finalProgressBarActive]} />
               <View style={[st.finalProgressBar, isValuationPhase && st.finalProgressBarActive]} />
-              <View style={st.finalProgressBar} />
+              <View style={[st.finalProgressBar, isCollectionPhase && st.finalProgressBarActive]} />
             </View>
           </Animated.View>
         </View>
@@ -1107,17 +1346,9 @@ const st = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: Spacing.lg },
   centered: { justifyContent: 'center', alignItems: 'center' },
   bottom: { paddingHorizontal: Spacing.lg, alignItems: 'center' },
-  flashContainer: {
+  introVideo: {
     flex: 1,
     backgroundColor: '#0b0b0b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.lg,
-  },
-  flashImage: {
-    width: '100%',
-    height: '82%',
-    borderRadius: BorderRadius.lg,
   },
   finalPerfumeImage: {
     width: SCREEN_WIDTH * 0.62,
@@ -1141,6 +1372,44 @@ const st = StyleSheet.create({
   },
   processingHero: {
     backgroundColor: Colors.background,
+  },
+  collectionHero: {
+    backgroundColor: Colors.background,
+  },
+  collectionTitle: {
+    color: Colors.text,
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  collectionFamily: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    marginTop: 2,
+  },
+  collectionPrice: {
+    fontSize: FontSizes.lg,
+    fontWeight: '800',
+    color: Colors.gold,
+    marginTop: 4,
+  },
+  collectionSlideRow: {
+    position: 'absolute',
+    left: COLLECTION_ROW_LEFT,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  collectionSlidePhotoOuter: {
+    width: COLLECTION_SLIDE_FRAME_WIDTH,
+    height: COLLECTION_SLIDE_FRAME_HEIGHT,
+    transform: [{ rotate: '-2deg' }],
+    marginRight: 12,
+    zIndex: 1,
+  },
+  collectionSlideInfo: {
+    flex: 1,
+    justifyContent: 'center',
   },
   processingBackgroundOverlay: {
     ...StyleSheet.absoluteFillObject,
