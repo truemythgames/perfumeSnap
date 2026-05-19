@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useImperativeHandle, forwardRef, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, forwardRef, useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,9 @@ import {
   Alert,
   LayoutAnimation,
   UIManager,
+  Modal,
+  Pressable,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,7 +27,9 @@ import Animated, {
   withTiming,
   interpolate,
   Easing,
+  runOnJS,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection, deleteFromCollection } from '../services/api';
 import { trackDeleteFromCollection, trackEvent } from '../services/analytics';
@@ -92,6 +97,247 @@ function computeLivePriceDisplay(item: CollectionItem): { display: string; midpo
   return { display, midpoint };
 }
 
+type SortOption = 'newest' | 'oldest' | 'nameAZ' | 'nameZA' | 'brandAZ' | 'priceHigh' | 'priceLow';
+
+interface FilterState {
+  priceMin: number | null;
+  priceMax: number | null;
+  dateFrom: 'all' | 'week' | 'month' | '3months' | '6months' | 'year';
+}
+
+const INITIAL_FILTER: FilterState = { priceMin: null, priceMax: null, dateFrom: 'all' };
+
+const DATE_OPTIONS: { key: FilterState['dateFrom']; label: string }[] = [
+  { key: 'all', label: 'All Time' },
+  { key: 'week', label: 'Last 7 Days' },
+  { key: 'month', label: 'Last 30 Days' },
+  { key: '3months', label: 'Last 3 Months' },
+  { key: '6months', label: 'Last 6 Months' },
+  { key: 'year', label: 'Last Year' },
+];
+
+const PRICE_RANGES: { min: number | null; max: number | null; label: string }[] = [
+  { min: null, max: null, label: 'Any Price' },
+  { min: 0, max: 50, label: 'Under $50' },
+  { min: 50, max: 100, label: '$50 – $100' },
+  { min: 100, max: 200, label: '$100 – $200' },
+  { min: 200, max: 500, label: '$200 – $500' },
+  { min: 500, max: null, label: '$500+' },
+];
+
+const SORT_OPTIONS: { key: SortOption; label: string; icon: string }[] = [
+  { key: 'newest', label: 'Date Added (Newest)', icon: 'arrow-down-outline' },
+  { key: 'oldest', label: 'Date Added (Oldest)', icon: 'arrow-up-outline' },
+  { key: 'nameAZ', label: 'Name (A → Z)', icon: 'text-outline' },
+  { key: 'nameZA', label: 'Name (Z → A)', icon: 'text-outline' },
+  { key: 'brandAZ', label: 'Brand (A → Z)', icon: 'pricetag-outline' },
+  { key: 'priceHigh', label: 'Price (High → Low)', icon: 'trending-up-outline' },
+  { key: 'priceLow', label: 'Price (Low → High)', icon: 'trending-down-outline' },
+];
+
+const DISMISS_THRESHOLD = 80;
+
+function SortSheet({ sortBy, onSelect, onClose }: { sortBy: SortOption; onSelect: (o: SortOption) => void; onClose: () => void }) {
+  const translateY = useSharedValue(400);
+  const overlayOpacity = useSharedValue(0);
+  const context = useSharedValue(0);
+
+  useEffect(() => {
+    translateY.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) });
+    overlayOpacity.value = withTiming(1, { duration: 250 });
+  }, []);
+
+  const dismiss = useCallback(() => {
+    overlayOpacity.value = withTiming(0, { duration: 200 });
+    translateY.value = withTiming(400, { duration: 200 }, () => {
+      runOnJS(onClose)();
+    });
+  }, [onClose]);
+
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      context.value = translateY.value;
+    })
+    .onUpdate((e) => {
+      const y = Math.max(0, context.value + e.translationY);
+      translateY.value = y;
+      overlayOpacity.value = interpolate(y, [0, 400], [1, 0], 'clamp');
+    })
+    .onEnd((e) => {
+      if (translateY.value > DISMISS_THRESHOLD || e.velocityY > 500) {
+        overlayOpacity.value = withTiming(0, { duration: 200 });
+        translateY.value = withTiming(400, { duration: 200 }, () => {
+          runOnJS(onClose)();
+        });
+      } else {
+        translateY.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+        overlayOpacity.value = withTiming(1, { duration: 200 });
+      }
+    });
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.value,
+  }));
+
+  return (
+    <>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.modalOverlayBg, overlayStyle]} />
+      <Pressable style={styles.modalOverlay} onPress={dismiss}>
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={[styles.modalSheet, sheetStyle]}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Sort By</Text>
+            {SORT_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.sortOption, sortBy === opt.key && styles.sortOptionActive]}
+                activeOpacity={0.7}
+                onPress={() => onSelect(opt.key)}
+              >
+                <Ionicons
+                  name={opt.icon as any}
+                  size={20}
+                  color={sortBy === opt.key ? Colors.primary : Colors.textSecondary}
+                />
+                <Text style={[styles.sortOptionText, sortBy === opt.key && styles.sortOptionTextActive]}>
+                  {opt.label}
+                </Text>
+                {sortBy === opt.key && (
+                  <Ionicons name="checkmark-circle" size={20} color={Colors.primary} style={{ marginLeft: 'auto' }} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </Animated.View>
+        </GestureDetector>
+      </Pressable>
+    </>
+  );
+}
+
+function FilterSheet({ filter, onApply, onClose }: { filter: FilterState; onApply: (f: FilterState) => void; onClose: () => void }) {
+  const translateY = useSharedValue(500);
+  const overlayOpacity = useSharedValue(0);
+  const context = useSharedValue(0);
+  const [localFilter, setLocalFilter] = useState<FilterState>(filter);
+
+  useEffect(() => {
+    translateY.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) });
+    overlayOpacity.value = withTiming(1, { duration: 250 });
+  }, []);
+
+  const dismiss = useCallback(() => {
+    overlayOpacity.value = withTiming(0, { duration: 200 });
+    translateY.value = withTiming(500, { duration: 200 }, () => {
+      runOnJS(onClose)();
+    });
+  }, [onClose]);
+
+  const apply = useCallback(() => {
+    overlayOpacity.value = withTiming(0, { duration: 200 });
+    translateY.value = withTiming(500, { duration: 200 }, () => {
+      runOnJS(onApply)(localFilter);
+    });
+  }, [localFilter, onApply]);
+
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      context.value = translateY.value;
+    })
+    .onUpdate((e) => {
+      const y = Math.max(0, context.value + e.translationY);
+      translateY.value = y;
+      overlayOpacity.value = interpolate(y, [0, 500], [1, 0], 'clamp');
+    })
+    .onEnd((e) => {
+      if (translateY.value > DISMISS_THRESHOLD || e.velocityY > 500) {
+        overlayOpacity.value = withTiming(0, { duration: 200 });
+        translateY.value = withTiming(500, { duration: 200 }, () => {
+          runOnJS(onClose)();
+        });
+      } else {
+        translateY.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+        overlayOpacity.value = withTiming(1, { duration: 200 });
+      }
+    });
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.value,
+  }));
+
+  const isActive = localFilter.priceMin !== null || localFilter.priceMax !== null || localFilter.dateFrom !== 'all';
+
+  return (
+    <>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.modalOverlayBg, overlayStyle]} />
+      <Pressable style={styles.modalOverlay} onPress={dismiss}>
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={[styles.modalSheet, sheetStyle]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.filterHeader}>
+              <Text style={styles.modalTitle}>Filter</Text>
+              {isActive && (
+                <TouchableOpacity onPress={() => setLocalFilter(INITIAL_FILTER)}>
+                  <Text style={styles.filterResetText}>Reset</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <Text style={styles.filterSectionTitle}>Price Range</Text>
+            <View style={styles.filterChips}>
+              {PRICE_RANGES.map((range, i) => {
+                const active = localFilter.priceMin === range.min && localFilter.priceMax === range.max;
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={[styles.filterChip, active && styles.filterChipActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setLocalFilter((f) => ({ ...f, priceMin: range.min, priceMax: range.max }))}
+                  >
+                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                      {range.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.filterSectionTitle}>Date Added</Text>
+            <View style={styles.filterChips}>
+              {DATE_OPTIONS.map((opt) => {
+                const active = localFilter.dateFrom === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.filterChip, active && styles.filterChipActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setLocalFilter((f) => ({ ...f, dateFrom: opt.key }))}
+                  >
+                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity style={styles.filterApplyBtn} activeOpacity={0.85} onPress={apply}>
+              <Text style={styles.filterApplyText}>Apply Filters</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </GestureDetector>
+      </Pressable>
+    </>
+  );
+}
+
 export interface CollectionTabHandle {
   deleteSelected: () => void;
 }
@@ -113,6 +359,10 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [sortModalVisible, setSortModalVisible] = useState(false);
+  const [filter, setFilter] = useState<FilterState>(INITIAL_FILTER);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
 
   const load = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
@@ -261,6 +511,65 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     return { count: items.length, brands: brands.size, totalValue };
   }, [items]);
 
+  const filteredItems = useMemo(() => {
+    let result = items;
+
+    if (filter.priceMin !== null || filter.priceMax !== null) {
+      result = result.filter((it) => {
+        const price = computeLivePriceDisplay(it)?.midpoint ?? null;
+        if (price === null) return false;
+        if (filter.priceMin !== null && price < filter.priceMin) return false;
+        if (filter.priceMax !== null && price > filter.priceMax) return false;
+        return true;
+      });
+    }
+
+    if (filter.dateFrom !== 'all') {
+      const now = Date.now();
+      const msMap: Record<string, number> = {
+        week: 7 * 24 * 60 * 60 * 1000,
+        month: 30 * 24 * 60 * 60 * 1000,
+        '3months': 90 * 24 * 60 * 60 * 1000,
+        '6months': 180 * 24 * 60 * 60 * 1000,
+        year: 365 * 24 * 60 * 60 * 1000,
+      };
+      const cutoff = now - (msMap[filter.dateFrom] || 0);
+      result = result.filter((it) => it.createdAt >= cutoff);
+    }
+
+    return result;
+  }, [items, filter]);
+
+  const sortedItems = useMemo(() => {
+    const sorted = [...filteredItems];
+    switch (sortBy) {
+      case 'newest':
+        return sorted.sort((a, b) => b.createdAt - a.createdAt);
+      case 'oldest':
+        return sorted.sort((a, b) => a.createdAt - b.createdAt);
+      case 'nameAZ':
+        return sorted.sort((a, b) => (a.perfume.name || '').localeCompare(b.perfume.name || ''));
+      case 'nameZA':
+        return sorted.sort((a, b) => (b.perfume.name || '').localeCompare(a.perfume.name || ''));
+      case 'brandAZ':
+        return sorted.sort((a, b) => (a.perfume.brand || '').localeCompare(b.perfume.brand || ''));
+      case 'priceHigh':
+        return sorted.sort((a, b) => {
+          const pa = computeLivePriceDisplay(a)?.midpoint ?? 0;
+          const pb = computeLivePriceDisplay(b)?.midpoint ?? 0;
+          return pb - pa;
+        });
+      case 'priceLow':
+        return sorted.sort((a, b) => {
+          const pa = computeLivePriceDisplay(a)?.midpoint ?? 0;
+          const pb = computeLivePriceDisplay(b)?.midpoint ?? 0;
+          return pa - pb;
+        });
+      default:
+        return sorted;
+    }
+  }, [filteredItems, sortBy]);
+
   const scrollY = useSharedValue(-ICON_BAR_HEIGHT);
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
@@ -295,13 +604,13 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     ) : (
       <View style={styles.toolbar}>
         <View style={styles.toolLeft}>
-          <TouchableOpacity style={styles.toolBtn}>
-            <Ionicons name="filter-outline" size={16} color={Colors.textSecondary} />
-            <Text style={styles.toolBtnText}>Filter</Text>
+          <TouchableOpacity style={styles.toolBtn} onPress={() => setFilterModalVisible(true)}>
+            <Ionicons name="filter-outline" size={16} color={filter.priceMin !== null || filter.priceMax !== null || filter.dateFrom !== 'all' ? Colors.primary : Colors.textSecondary} />
+            <Text style={[styles.toolBtnText, (filter.priceMin !== null || filter.priceMax !== null || filter.dateFrom !== 'all') && { color: Colors.primary }]}>Filter</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.toolBtn}>
-            <Ionicons name="swap-vertical-outline" size={16} color={Colors.textSecondary} />
-            <Text style={styles.toolBtnText}>Sort</Text>
+          <TouchableOpacity style={styles.toolBtn} onPress={() => setSortModalVisible(true)}>
+            <Ionicons name="swap-vertical-outline" size={16} color={sortBy !== 'newest' ? Colors.primary : Colors.textSecondary} />
+            <Text style={[styles.toolBtnText, sortBy !== 'newest' && { color: Colors.primary }]}>Sort</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity
@@ -356,8 +665,8 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const TOOLBAR_ROW: ToolbarRow = { __toolbar: true };
 
   const listData = useMemo<ListRow[]>(
-    () => (items.length > 0 ? [TOOLBAR_ROW, ...items] : []),
-    [items],
+    () => (sortedItems.length > 0 ? [TOOLBAR_ROW, ...sortedItems] : []),
+    [sortedItems],
   );
 
   const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
@@ -535,6 +844,40 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           </View>
         </View>
       </View>
+
+      {/* Sort Modal */}
+      <Modal
+        visible={sortModalVisible}
+        transparent
+        animationType="none"
+        onRequestClose={() => setSortModalVisible(false)}
+      >
+        <SortSheet
+          sortBy={sortBy}
+          onSelect={(opt) => {
+            setSortBy(opt);
+            setSortModalVisible(false);
+          }}
+          onClose={() => setSortModalVisible(false)}
+        />
+      </Modal>
+
+      {/* Filter Modal */}
+      <Modal
+        visible={filterModalVisible}
+        transparent
+        animationType="none"
+        onRequestClose={() => setFilterModalVisible(false)}
+      >
+        <FilterSheet
+          filter={filter}
+          onApply={(f) => {
+            setFilter(f);
+            setFilterModalVisible(false);
+          }}
+          onClose={() => setFilterModalVisible(false)}
+        />
+      </Modal>
 
     </LinearGradient>
   );
@@ -868,6 +1211,119 @@ const styles = StyleSheet.create({
   },
   retryBtnText: {
     color: '#fff',
+    fontWeight: '700',
+  },
+
+  // Sort modal
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalOverlayBg: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  modalSheet: {
+    backgroundColor: '#1e1a16',
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Platform.OS === 'ios' ? 40 : Spacing.lg,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderColor: 'rgba(200,148,60,0.2)',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.textMuted,
+    alignSelf: 'center',
+    marginBottom: Spacing.lg,
+  },
+  modalTitle: {
+    fontSize: FontSizes.lg,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: Spacing.md,
+  },
+  sortOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  sortOptionActive: {
+    backgroundColor: Colors.surfaceLight,
+  },
+  sortOptionText: {
+    fontSize: FontSizes.md,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  sortOptionTextActive: {
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+
+  // Filter
+  filterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  filterResetText: {
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  filterSectionTitle: {
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: 'rgba(200,148,60,0.15)',
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  filterChipTextActive: {
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  filterApplyBtn: {
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.full,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  filterApplyText: {
+    color: '#fff',
+    fontSize: FontSizes.md,
     fontWeight: '700',
   },
 
