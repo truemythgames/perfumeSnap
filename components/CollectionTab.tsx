@@ -15,6 +15,7 @@ import {
   Modal,
   Pressable,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,6 +35,7 @@ import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection, deleteFromCollection } from '../services/api';
 import { trackDeleteFromCollection, trackEvent } from '../services/analytics';
 import { FREE_LIMITS, getPremiumStatus } from '../services/access';
+import { getPreferredCurrency, getCurrencyByCode } from '../services/currency';
 
 const EDIT_ANIM_DURATION = 280;
 const CHECKBOX_ICON = 26;
@@ -102,28 +104,12 @@ type SortOption = 'newest' | 'oldest' | 'nameAZ' | 'nameZA' | 'brandAZ' | 'price
 interface FilterState {
   priceMin: number | null;
   priceMax: number | null;
-  dateFrom: 'all' | 'week' | 'month' | '3months' | '6months' | 'year';
+  brands: Set<string>;
 }
 
-const INITIAL_FILTER: FilterState = { priceMin: null, priceMax: null, dateFrom: 'all' };
+const INITIAL_FILTER: FilterState = { priceMin: null, priceMax: null, brands: new Set() };
 
-const DATE_OPTIONS: { key: FilterState['dateFrom']; label: string }[] = [
-  { key: 'all', label: 'All Time' },
-  { key: 'week', label: 'Last 7 Days' },
-  { key: 'month', label: 'Last 30 Days' },
-  { key: '3months', label: 'Last 3 Months' },
-  { key: '6months', label: 'Last 6 Months' },
-  { key: 'year', label: 'Last Year' },
-];
-
-const PRICE_RANGES: { min: number | null; max: number | null; label: string }[] = [
-  { min: null, max: null, label: 'Any Price' },
-  { min: 0, max: 50, label: 'Under $50' },
-  { min: 50, max: 100, label: '$50 – $100' },
-  { min: 100, max: 200, label: '$100 – $200' },
-  { min: 200, max: 500, label: '$200 – $500' },
-  { min: 500, max: null, label: '$500+' },
-];
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const SORT_OPTIONS: { key: SortOption; label: string; icon: string }[] = [
   { key: 'newest', label: 'Date Added (Newest)', icon: 'arrow-down-outline' },
@@ -218,27 +204,138 @@ function SortSheet({ sortBy, onSelect, onClose }: { sortBy: SortOption; onSelect
   );
 }
 
-function FilterSheet({ filter, onApply, onClose }: { filter: FilterState; onApply: (f: FilterState) => void; onClose: () => void }) {
-  const translateY = useSharedValue(500);
-  const overlayOpacity = useSharedValue(0);
-  const context = useSharedValue(0);
-  const [localFilter, setLocalFilter] = useState<FilterState>(filter);
+const ROLLER_ITEM_HEIGHT = 36;
+const ROLLER_VISIBLE_ITEMS = 5;
+const ROLLER_HEIGHT = ROLLER_ITEM_HEIGHT * ROLLER_VISIBLE_ITEMS;
+
+function PriceRoller({ values, selectedIndex, onSelect }: {
+  values: number[];
+  selectedIndex: number;
+  onSelect: (idx: number) => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const isInitial = useRef(true);
 
   useEffect(() => {
-    translateY.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) });
-    overlayOpacity.value = withTiming(1, { duration: 250 });
+    if (isInitial.current) {
+      isInitial.current = false;
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          y: selectedIndex * ROLLER_ITEM_HEIGHT,
+          animated: false,
+        });
+      }, 50);
+    }
+  }, []);
+
+  const handleScrollEnd = useCallback((e: any) => {
+    const offset = e.nativeEvent.contentOffset.y;
+    const idx = Math.round(offset / ROLLER_ITEM_HEIGHT);
+    const clamped = Math.max(0, Math.min(idx, values.length - 1));
+    onSelect(clamped);
+  }, [values.length, onSelect]);
+
+  const paddingItems = Math.floor(ROLLER_VISIBLE_ITEMS / 2);
+
+  return (
+    <View style={styles.rollerContainer}>
+      <View style={styles.rollerHighlight} pointerEvents="none" />
+      <ScrollView
+        ref={scrollRef}
+        snapToInterval={ROLLER_ITEM_HEIGHT}
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingVertical: paddingItems * ROLLER_ITEM_HEIGHT,
+        }}
+        onMomentumScrollEnd={handleScrollEnd}
+        onScrollEndDrag={handleScrollEnd}
+        nestedScrollEnabled
+      >
+        {values.map((value, index) => (
+          <View key={index} style={styles.rollerItem}>
+            <Text style={[styles.rollerText, index === selectedIndex && styles.rollerTextSelected]}>
+              {value.toLocaleString()}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function FilterSheet({ filter, onApply, onClose, brands, maxPrice, currencySymbol }: {
+  filter: FilterState;
+  onApply: (f: FilterState) => void;
+  onClose: () => void;
+  brands: string[];
+  maxPrice: number;
+  currencySymbol: string;
+}) {
+  const translateY = useSharedValue(SCREEN_HEIGHT);
+  const overlayOpacity = useSharedValue(0);
+  const context = useSharedValue(0);
+  const [localFilter, setLocalFilter] = useState<FilterState>(() => ({
+    ...filter,
+    brands: filter.brands instanceof Set ? filter.brands : new Set(),
+  }));
+  const [showAllBrands, setShowAllBrands] = useState(false);
+  const [priceExpanded, setPriceExpanded] = useState(
+    filter.priceMin !== null || filter.priceMax !== null
+  );
+  const insets = useSafeAreaInsets();
+
+  const roundedMax = Math.ceil(maxPrice / 50) * 50 || 500;
+
+  const priceValues = useMemo(() => {
+    let step: number;
+    if (roundedMax <= 100) step = 5;
+    else if (roundedMax <= 300) step = 10;
+    else if (roundedMax <= 1000) step = 25;
+    else if (roundedMax <= 3000) step = 50;
+    else step = 100;
+    const values: number[] = [];
+    for (let v = 0; v <= roundedMax; v += step) values.push(v);
+    if (values[values.length - 1] !== roundedMax) values.push(roundedMax);
+    return values;
+  }, [roundedMax]);
+
+  const [selectedMin, setSelectedMin] = useState(() => {
+    const v = localFilter.priceMin ?? 0;
+    const idx = priceValues.findIndex((p) => p >= v);
+    return idx >= 0 ? idx : 0;
+  });
+  const [selectedMax, setSelectedMax] = useState(() => {
+    const v = localFilter.priceMax ?? roundedMax;
+    const idx = priceValues.findIndex((p) => p >= v);
+    return idx >= 0 ? idx : priceValues.length - 1;
+  });
+
+  useEffect(() => {
+    const min = priceValues[selectedMin] ?? 0;
+    const max = priceValues[selectedMax] ?? roundedMax;
+    if (min === 0 && max >= roundedMax) {
+      setLocalFilter((f) => ({ ...f, priceMin: null, priceMax: null }));
+    } else {
+      setLocalFilter((f) => ({ ...f, priceMin: min, priceMax: max }));
+    }
+  }, [selectedMin, selectedMax]);
+
+  useEffect(() => {
+    translateY.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
+    overlayOpacity.value = withTiming(1, { duration: 300 });
   }, []);
 
   const dismiss = useCallback(() => {
     overlayOpacity.value = withTiming(0, { duration: 200 });
-    translateY.value = withTiming(500, { duration: 200 }, () => {
+    translateY.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, () => {
       runOnJS(onClose)();
     });
   }, [onClose]);
 
   const apply = useCallback(() => {
     overlayOpacity.value = withTiming(0, { duration: 200 });
-    translateY.value = withTiming(500, { duration: 200 }, () => {
+    translateY.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, () => {
       runOnJS(onApply)(localFilter);
     });
   }, [localFilter, onApply]);
@@ -250,12 +347,12 @@ function FilterSheet({ filter, onApply, onClose }: { filter: FilterState; onAppl
     .onUpdate((e) => {
       const y = Math.max(0, context.value + e.translationY);
       translateY.value = y;
-      overlayOpacity.value = interpolate(y, [0, 500], [1, 0], 'clamp');
+      overlayOpacity.value = interpolate(y, [0, SCREEN_HEIGHT * 0.4], [1, 0], 'clamp');
     })
     .onEnd((e) => {
-      if (translateY.value > DISMISS_THRESHOLD || e.velocityY > 500) {
+      if (translateY.value > 120 || e.velocityY > 500) {
         overlayOpacity.value = withTiming(0, { duration: 200 });
-        translateY.value = withTiming(500, { duration: 200 }, () => {
+        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, () => {
           runOnJS(onClose)();
         });
       } else {
@@ -272,68 +369,118 @@ function FilterSheet({ filter, onApply, onClose }: { filter: FilterState; onAppl
     opacity: overlayOpacity.value,
   }));
 
-  const isActive = localFilter.priceMin !== null || localFilter.priceMax !== null || localFilter.dateFrom !== 'all';
+  const isActive = localFilter.priceMin !== null || localFilter.priceMax !== null || localFilter.brands.size > 0;
+  const visibleBrands = showAllBrands ? brands : brands.slice(0, 8);
+
+  const toggleBrand = (brand: string) => {
+    setLocalFilter((f) => {
+      const next = new Set(f.brands);
+      if (next.has(brand)) next.delete(brand); else next.add(brand);
+      return { ...f, brands: next };
+    });
+  };
 
   return (
     <>
       <Animated.View style={[StyleSheet.absoluteFill, styles.modalOverlayBg, overlayStyle]} />
-      <Pressable style={styles.modalOverlay} onPress={dismiss}>
+      <Animated.View style={[styles.filterFullSheet, sheetStyle]}>
         <GestureDetector gesture={panGesture}>
-          <Animated.View style={[styles.modalSheet, sheetStyle]}>
+          <View style={styles.filterDragArea}>
             <View style={styles.modalHandle} />
-            <View style={styles.filterHeader}>
-              <Text style={styles.modalTitle}>Filter</Text>
-              {isActive && (
-                <TouchableOpacity onPress={() => setLocalFilter(INITIAL_FILTER)}>
-                  <Text style={styles.filterResetText}>Reset</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <Text style={styles.filterSectionTitle}>Price Range</Text>
-            <View style={styles.filterChips}>
-              {PRICE_RANGES.map((range, i) => {
-                const active = localFilter.priceMin === range.min && localFilter.priceMax === range.max;
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    style={[styles.filterChip, active && styles.filterChipActive]}
-                    activeOpacity={0.7}
-                    onPress={() => setLocalFilter((f) => ({ ...f, priceMin: range.min, priceMax: range.max }))}
-                  >
-                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                      {range.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={styles.filterSectionTitle}>Date Added</Text>
-            <View style={styles.filterChips}>
-              {DATE_OPTIONS.map((opt) => {
-                const active = localFilter.dateFrom === opt.key;
-                return (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.filterChip, active && styles.filterChipActive]}
-                    activeOpacity={0.7}
-                    onPress={() => setLocalFilter((f) => ({ ...f, dateFrom: opt.key }))}
-                  >
-                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity style={styles.filterApplyBtn} activeOpacity={0.85} onPress={apply}>
-              <Text style={styles.filterApplyText}>Apply Filters</Text>
-            </TouchableOpacity>
-          </Animated.View>
+          </View>
         </GestureDetector>
-      </Pressable>
+
+        <View style={styles.filterTitleRow}>
+          <Text style={styles.filterTitle}>Filter</Text>
+          <TouchableOpacity onPress={dismiss} hitSlop={8}>
+            <Ionicons name="close" size={24} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.filterScrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Text style={styles.filterSectionTitle}>Brand</Text>
+          <View style={styles.filterChips}>
+            {visibleBrands.map((brand) => {
+              const active = localFilter.brands.has(brand);
+              return (
+                <TouchableOpacity
+                  key={brand}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  activeOpacity={0.7}
+                  onPress={() => toggleBrand(brand)}
+                >
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                    {brand}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {brands.length > 8 && (
+            <TouchableOpacity onPress={() => setShowAllBrands(!showAllBrands)} style={styles.showMoreBtn}>
+              <Text style={styles.showMoreText}>
+                {showAllBrands ? 'Show less' : `Show more`}
+              </Text>
+              <Ionicons name={showAllBrands ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.filterDivider} />
+
+          <Text style={styles.filterSectionTitle}>Price Range</Text>
+          <TouchableOpacity
+            style={styles.priceRangeHeader}
+            activeOpacity={0.7}
+            onPress={() => setPriceExpanded(!priceExpanded)}
+          >
+            <Text style={styles.priceRangeCurrency}>{currencySymbol}</Text>
+            <View style={styles.priceRangeRight}>
+              <Text style={styles.priceRangeLabel}>
+                {priceValues[selectedMin]?.toLocaleString() ?? 0}–{priceValues[selectedMax]?.toLocaleString() ?? roundedMax}
+              </Text>
+              <Ionicons name={priceExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+          {priceExpanded && (
+            <View style={styles.pricePickerRow}>
+              <PriceRoller
+                values={priceValues}
+                selectedIndex={selectedMin}
+                onSelect={setSelectedMin}
+              />
+              <Text style={styles.pricePickerDash}>—</Text>
+              <PriceRoller
+                values={priceValues}
+                selectedIndex={selectedMax}
+                onSelect={setSelectedMax}
+              />
+            </View>
+          )}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+
+        <View style={[styles.filterFooter, { paddingBottom: insets.bottom || Spacing.lg }]}>
+          {isActive && (
+            <TouchableOpacity onPress={() => {
+              setLocalFilter(INITIAL_FILTER);
+              setSelectedMin(0);
+              setSelectedMax(priceValues.length - 1);
+              setPriceExpanded(false);
+            }}>
+              <Text style={styles.filterClearText}>Clear All</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.filterApplyBtn, !isActive && { flex: 1 }]}
+            activeOpacity={0.85}
+            onPress={apply}
+          >
+            <Text style={styles.filterApplyText}>
+              {isActive ? 'Show Results' : 'Done'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     </>
   );
 }
@@ -359,6 +506,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
+  const [currencySymbol, setCurrencySymbol] = useState('$');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [filter, setFilter] = useState<FilterState>(INITIAL_FILTER);
@@ -395,6 +543,12 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
   useEffect(() => { load(true); }, [load]);
   useEffect(() => { getPremiumStatus().then(setIsPremium); }, []);
+  useEffect(() => {
+    getPreferredCurrency().then((code) => {
+      const c = getCurrencyByCode(code);
+      if (c) setCurrencySymbol(c.symbol);
+    });
+  }, []);
 
   useFocusEffect(useCallback(() => { load(false); }, [load]));
 
@@ -511,8 +665,24 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     return { count: items.length, brands: brands.size, totalValue };
   }, [items]);
 
+  const allBrands = useMemo(
+    () => [...new Set(items.map((it) => it.perfume.brand).filter(Boolean))].sort() as string[],
+    [items],
+  );
+
+  const collectionMaxPrice = useMemo(() => {
+    const prices = items
+      .map((it) => computeLivePriceDisplay(it)?.midpoint ?? 0)
+      .filter((v) => v > 0);
+    return prices.length > 0 ? Math.max(...prices) : 500;
+  }, [items]);
+
   const filteredItems = useMemo(() => {
     let result = items;
+
+    if (filter.brands && filter.brands.size > 0) {
+      result = result.filter((it) => filter.brands.has(it.perfume.brand || ''));
+    }
 
     if (filter.priceMin !== null || filter.priceMax !== null) {
       result = result.filter((it) => {
@@ -522,19 +692,6 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
         if (filter.priceMax !== null && price > filter.priceMax) return false;
         return true;
       });
-    }
-
-    if (filter.dateFrom !== 'all') {
-      const now = Date.now();
-      const msMap: Record<string, number> = {
-        week: 7 * 24 * 60 * 60 * 1000,
-        month: 30 * 24 * 60 * 60 * 1000,
-        '3months': 90 * 24 * 60 * 60 * 1000,
-        '6months': 180 * 24 * 60 * 60 * 1000,
-        year: 365 * 24 * 60 * 60 * 1000,
-      };
-      const cutoff = now - (msMap[filter.dateFrom] || 0);
-      result = result.filter((it) => it.createdAt >= cutoff);
     }
 
     return result;
@@ -605,8 +762,8 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       <View style={styles.toolbar}>
         <View style={styles.toolLeft}>
           <TouchableOpacity style={styles.toolBtn} onPress={() => setFilterModalVisible(true)}>
-            <Ionicons name="filter-outline" size={16} color={filter.priceMin !== null || filter.priceMax !== null || filter.dateFrom !== 'all' ? Colors.primary : Colors.textSecondary} />
-            <Text style={[styles.toolBtnText, (filter.priceMin !== null || filter.priceMax !== null || filter.dateFrom !== 'all') && { color: Colors.primary }]}>Filter</Text>
+            <Ionicons name="filter-outline" size={16} color={filter.priceMin !== null || filter.priceMax !== null || filter.brands.size > 0 ? Colors.primary : Colors.textSecondary} />
+            <Text style={[styles.toolBtnText, (filter.priceMin !== null || filter.priceMax !== null || filter.brands.size > 0) && { color: Colors.primary }]}>Filter</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.toolBtn} onPress={() => setSortModalVisible(true)}>
             <Ionicons name="swap-vertical-outline" size={16} color={sortBy !== 'newest' ? Colors.primary : Colors.textSecondary} />
@@ -665,8 +822,8 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const TOOLBAR_ROW: ToolbarRow = { __toolbar: true };
 
   const listData = useMemo<ListRow[]>(
-    () => (sortedItems.length > 0 ? [TOOLBAR_ROW, ...sortedItems] : []),
-    [sortedItems],
+    () => (items.length > 0 ? [TOOLBAR_ROW, ...sortedItems] : []),
+    [items.length, sortedItems],
   );
 
   const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
@@ -871,6 +1028,9 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       >
         <FilterSheet
           filter={filter}
+          brands={allBrands}
+          maxPrice={collectionMaxPrice}
+          currencySymbol={currencySymbol}
           onApply={(f) => {
             setFilter(f);
             setFilterModalVisible(false);
@@ -1268,16 +1428,37 @@ const styles = StyleSheet.create({
   },
 
   // Filter
-  filterHeader: {
+  filterFullSheet: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#1e1a16',
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    marginTop: 100,
+  },
+  filterDragArea: {
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    alignItems: 'center',
+  },
+  filterTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
   },
-  filterResetText: {
-    fontSize: FontSizes.sm,
-    fontWeight: '600',
-    color: Colors.primary,
+  filterTitle: {
+    fontSize: FontSizes.xl,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  filterScrollContent: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg,
   },
   filterSectionTitle: {
     fontSize: FontSizes.sm,
@@ -1285,7 +1466,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginTop: Spacing.md,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   filterChips: {
@@ -1295,7 +1476,7 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.sm + 2,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
@@ -1314,8 +1495,105 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '600',
   },
-  filterApplyBtn: {
+  showMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: Spacing.sm,
+  },
+  showMoreText: {
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  filterDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.border,
     marginTop: Spacing.lg,
+  },
+  priceRangeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    marginBottom: Spacing.md,
+  },
+  priceRangeCurrency: {
+    fontSize: FontSizes.md,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  priceRangeLabel: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+  },
+  priceRangeRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pricePickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+  },
+  pricePickerDash: {
+    fontSize: FontSizes.lg,
+    color: Colors.textMuted,
+  },
+  rollerContainer: {
+    height: ROLLER_HEIGHT,
+    flex: 1,
+    overflow: 'hidden',
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceLight,
+  },
+  rollerHighlight: {
+    position: 'absolute',
+    top: ROLLER_ITEM_HEIGHT * Math.floor(ROLLER_VISIBLE_ITEMS / 2),
+    left: 0,
+    right: 0,
+    height: ROLLER_ITEM_HEIGHT,
+    backgroundColor: 'rgba(200,148,60,0.12)',
+    borderRadius: BorderRadius.sm,
+    zIndex: 1,
+  },
+  rollerItem: {
+    height: ROLLER_ITEM_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rollerText: {
+    fontSize: FontSizes.md,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+  rollerTextSelected: {
+    color: Colors.text,
+    fontWeight: '700',
+    fontSize: FontSizes.lg,
+  },
+  filterFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    gap: Spacing.lg,
+  },
+  filterClearText: {
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  filterApplyBtn: {
+    flex: 1,
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.full,
     paddingVertical: Spacing.md,
