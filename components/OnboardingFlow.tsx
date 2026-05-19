@@ -470,6 +470,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const finalImageScale = useSharedValue(1.06);
   const finalContentOpacity = useSharedValue(0);
   const sharedImageProgress = useSharedValue(0);
+  const sharedImageVisible = useSharedValue(0);
   const processingBgOpacity = useSharedValue(0);
   const shineRotation = useSharedValue(0);
   const processingFrameRotate = useSharedValue(0);
@@ -484,6 +485,8 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const welcomeFrameGlow = useSharedValue(0);
   const welcomeTitleSlide = useSharedValue(0);
   const welcomeSubtitleSlide = useSharedValue(0);
+  const stepTitleSlide = useSharedValue(0);
+  const stepSubtitleSlide = useSharedValue(0);
   const confettiProgress = useSharedValue(0);
   const confettiOpacity = useSharedValue(0);
   const collectionFrameProgress = useSharedValue(0);
@@ -576,19 +579,32 @@ export default function OnboardingFlow({ onComplete }: Props) {
 
   useEventListener(player, 'playToEnd', () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    sharedImageProgress.value = 0;
+    sharedImageVisible.value = 1;
     setIsImageTransitioning(true);
     setShowFinalImage(false);
     setShowWelcomeFrameIntro(false);
     welcomeFrameReveal.value = 0;
-    sharedImageProgress.value = 0;
     setStep(3);
-    carouselOpacity.value = withTiming(0, { duration: 300 });
+    carouselOpacity.value = 0;
     rateOpacity.value = 1;
+    finalContentOpacity.value = 1;
+    welcomeTitleSlide.value = 0;
+    welcomeSubtitleSlide.value = 0;
+    welcomeTitleSlide.value = withDelay(
+      400,
+      withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
+    );
+    welcomeSubtitleSlide.value = withDelay(
+      600,
+      withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
+    );
     sharedImageProgress.value = withTiming(
       1,
       { duration: IMAGE_TRANSITION_MS, easing: Easing.bezier(0.25, 0.1, 0.25, 1) },
       (finished) => {
         if (finished) {
+          sharedImageVisible.value = 0;
           runOnJS(setIsImageTransitioning)(false);
           runOnJS(setShowFinalImage)(true);
         }
@@ -667,22 +683,11 @@ export default function OnboardingFlow({ onComplete }: Props) {
     welcomeFrameReveal.value = 0;
     let nextTimer: ReturnType<typeof setTimeout> | null = null;
 
-    welcomeTitleSlide.value = 0;
-    welcomeSubtitleSlide.value = 0;
-
     const frameTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
       welcomeFrameReveal.value = withTiming(1, {
         duration: WELCOME_FRAME_FADE_MS,
         easing: Easing.out(Easing.cubic),
       });
-      welcomeTitleSlide.value = withDelay(
-        200,
-        withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
-      );
-      welcomeSubtitleSlide.value = withDelay(
-        450,
-        withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
-      );
       nextTimer = setTimeout(
         () => advanceTo(4),
         WELCOME_TO_RECOGNITION_DELAY_MS,
@@ -697,6 +702,17 @@ export default function OnboardingFlow({ onComplete }: Props) {
 
   useEffect(() => {
     if (step !== 4) return;
+
+    stepTitleSlide.value = 0;
+    stepSubtitleSlide.value = 0;
+    stepTitleSlide.value = withDelay(
+      200,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+    stepSubtitleSlide.value = withDelay(
+      400,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
 
     let tiltTimer: ReturnType<typeof setTimeout> | null = null;
     let valuationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -760,6 +776,14 @@ export default function OnboardingFlow({ onComplete }: Props) {
 
   useEffect(() => {
     if (step !== 5) return;
+
+    stepTitleSlide.value = 0;
+    stepSubtitleSlide.value = 0;
+    stepTitleSlide.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) });
+    stepSubtitleSlide.value = withDelay(
+      200,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
 
     const startPrice = 470;
     const steps = VALUATION_COUNT_STEPS;
@@ -848,6 +872,18 @@ export default function OnboardingFlow({ onComplete }: Props) {
 
   useEffect(() => {
     if (step !== 6) return;
+
+    stepTitleSlide.value = 0;
+    stepSubtitleSlide.value = 0;
+    stepTitleSlide.value = withDelay(
+      300,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+    stepSubtitleSlide.value = withDelay(
+      500,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+    );
+
     collectionFrameProgress.value = 0;
     collectionLeadCardProgress.value = 0;
     collectionMoreRowsProgress.value = 0;
@@ -969,6 +1005,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       width: interpolate(p, [0, 0.15, 1], [sharedStartWidth, sharedStartWidth, sharedEndWidth], Extrapolation.CLAMP),
       height: interpolate(p, [0, 0.15, 1], [sharedStartHeight, sharedStartHeight, sharedEndHeight], Extrapolation.CLAMP),
       borderRadius: interpolate(p, [0, 0.15, 1], [0, 0, BorderRadius.md], Extrapolation.CLAMP),
+      opacity: sharedImageVisible.value,
     };
   });
   const processingBgStyle = useAnimatedStyle(() => ({
@@ -1005,13 +1042,25 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const welcomeTitleStyle = useAnimatedStyle(() => ({
     opacity: welcomeTitleSlide.value,
     transform: [
-      { translateY: interpolate(welcomeTitleSlide.value, [0, 1], [18, 0]) },
+      { translateX: interpolate(welcomeTitleSlide.value, [0, 1], [40, 0]) },
     ],
   }));
   const welcomeSubtitleStyle = useAnimatedStyle(() => ({
     opacity: welcomeSubtitleSlide.value,
     transform: [
-      { translateY: interpolate(welcomeSubtitleSlide.value, [0, 1], [14, 0]) },
+      { translateX: interpolate(welcomeSubtitleSlide.value, [0, 1], [40, 0]) },
+    ],
+  }));
+  const stepTitleStyle = useAnimatedStyle(() => ({
+    opacity: stepTitleSlide.value,
+    transform: [
+      { translateX: interpolate(stepTitleSlide.value, [0, 1], [40, 0]) },
+    ],
+  }));
+  const stepSubtitleStyle = useAnimatedStyle(() => ({
+    opacity: stepSubtitleSlide.value,
+    transform: [
+      { translateX: interpolate(stepSubtitleSlide.value, [0, 1], [40, 0]) },
     ],
   }));
   const welcomeFrameGlowStyle = useAnimatedStyle(() => ({
@@ -1251,7 +1300,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
               isPostWelcomePhase ? recognitionContentStyle : finalContentRevealStyle,
             ]}
           >
-            <Animated.View style={!isPostWelcomePhase ? welcomeTitleStyle : undefined}>
+            <Animated.View style={!isPostWelcomePhase ? welcomeTitleStyle : stepTitleStyle}>
               <Text style={st.finalTitle}>
                 {isCollectionPhase
                   ? 'Build Your Personal Collection'
@@ -1260,7 +1309,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
                   : (isEasyPhotoPhase ? 'Easy Photo Recognition' : `Welcome To\nPerfumeSnap`))}
               </Text>
             </Animated.View>
-            <Animated.View style={!isPostWelcomePhase ? welcomeSubtitleStyle : undefined}>
+            <Animated.View style={!isPostWelcomePhase ? welcomeSubtitleStyle : stepSubtitleStyle}>
               <Text style={st.finalSubtitle}>
                 {isCollectionPhase
                   ? 'Save Your Results And Receive Personalized\nSuggestions based on your preferences.'
@@ -1281,13 +1330,11 @@ export default function OnboardingFlow({ onComplete }: Props) {
         </View>
       </Animated.View>
 
-      {isImageTransitioning && (
-        <Animated.Image
-          source={FINAL_PERFUME_IMAGE}
-          style={sharedImageStyle}
-          resizeMode="cover"
-        />
-      )}
+      <Animated.Image
+        source={FINAL_PERFUME_IMAGE}
+        style={sharedImageStyle}
+        resizeMode="cover"
+      />
 
       {/* ── Welcome Overlay (white, on top – matches native splash) ── */}
       <Animated.View
