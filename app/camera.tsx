@@ -8,6 +8,8 @@ import {
   Alert,
   Platform,
   Linking,
+  Modal,
+  Image,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
@@ -46,6 +48,7 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [showTips, setShowTips] = useState(false);
   const INITIAL_ZOOM_PCT = 0.25;
   const [zoom, setZoom] = useState(MAX_ZOOM * INITIAL_ZOOM_PCT);
   const insets = useSafeAreaInsets();
@@ -313,10 +316,88 @@ export default function CameraScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        <TouchableOpacity style={styles.sideButton}>
+        <TouchableOpacity style={styles.sideButton} onPress={() => setShowTips(true)}>
           <Ionicons name="help-outline" size={24} color={Colors.textSecondary} />
         </TouchableOpacity>
       </View>
+
+      {/* Snap Tips Modal */}
+      <Modal
+        visible={showTips}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowTips(false)}
+      >
+        <View style={styles.tipsContainer}>
+          <Text style={styles.tipsTitle}>Snap Tips</Text>
+
+          <View style={styles.tipsGoodWrap}>
+            <Image
+              source={require('../assets/images/snap-tip-good.png')}
+              style={styles.tipsGoodImage}
+              resizeMode="cover"
+            />
+            <View style={styles.tipsCheckBadge}>
+              <Ionicons name="checkmark-circle" size={32} color="#fff" />
+            </View>
+          </View>
+
+          <View style={styles.tipsBadRow}>
+            <View style={styles.tipsBadItem}>
+              <View style={styles.tipsBadImageWrap}>
+                <Image
+                  source={require('../assets/images/snap-tip-close.png')}
+                  style={styles.tipsBadImage}
+                  resizeMode="cover"
+                />
+              </View>
+              <View style={styles.tipsBadBadge}>
+                <Ionicons name="close-circle" size={22} color="#fff" />
+              </View>
+              <Text style={styles.tipsBadLabel}>Too close</Text>
+            </View>
+            <View style={styles.tipsBadItem}>
+              <View style={styles.tipsBadImageWrap}>
+                <Image
+                  source={require('../assets/images/snap-tip-far.png')}
+                  style={styles.tipsBadImage}
+                  resizeMode="cover"
+                />
+              </View>
+              <View style={styles.tipsBadBadge}>
+                <Ionicons name="close-circle" size={22} color="#fff" />
+              </View>
+              <Text style={styles.tipsBadLabel}>Too far</Text>
+            </View>
+            <View style={styles.tipsBadItem}>
+              <View style={styles.tipsBadImageWrap}>
+                <Image
+                  source={require('../assets/images/snap-tip-good.png')}
+                  style={styles.tipsBadImage}
+                  resizeMode="cover"
+                  blurRadius={8}
+                />
+              </View>
+              <View style={styles.tipsBadBadge}>
+                <Ionicons name="close-circle" size={22} color="#fff" />
+              </View>
+              <Text style={styles.tipsBadLabel}>Too blurry</Text>
+            </View>
+          </View>
+
+          <View style={{ flex: 1 }} />
+
+          <TouchableOpacity
+            style={styles.tipsContinueBtn}
+            activeOpacity={0.85}
+            onPress={() => setShowTips(false)}
+          >
+            <Text style={styles.tipsContinueText}>Continue</Text>
+          </TouchableOpacity>
+          <View style={{ height: insets.bottom + Spacing.md }} />
+        </View>
+      </Modal>
+
       {/* Shutter dim feedback over camera card */}
       <Animated.View
         style={[styles.shutterDim, shutterStyle]}
@@ -549,6 +630,98 @@ const styles = StyleSheet.create({
   },
   permissionButtonText: {
     fontSize: FontSizes.md,
+    fontWeight: '700',
+    color: '#fff',
+  },
+
+  // Snap Tips
+  tipsContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: 60,
+    alignItems: 'center',
+  },
+  tipsTitle: {
+    fontSize: FontSizes.xl,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: Spacing.xl,
+  },
+  tipsGoodWrap: {
+    width: SCREEN_WIDTH * 0.55,
+    height: SCREEN_WIDTH * 0.55,
+    borderRadius: BorderRadius.lg,
+    overflow: 'visible',
+    marginBottom: Spacing.xl,
+  },
+  tipsGoodImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: BorderRadius.lg,
+  },
+  tipsCheckBadge: {
+    position: 'absolute',
+    top: -12,
+    right: -12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#34c759',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tipsBadRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    justifyContent: 'center',
+  },
+  tipsBadItem: {
+    alignItems: 'center',
+    width: (SCREEN_WIDTH - Spacing.lg * 2 - Spacing.md * 2) / 3,
+  },
+  tipsBadImageWrap: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+    backgroundColor: Colors.surfaceLight,
+  },
+  tipsBadImage: {
+    width: '100%',
+    height: '100%',
+  },
+  tipsBadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tipsBadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#cf4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tipsBadLabel: {
+    marginTop: Spacing.sm,
+    fontSize: FontSizes.sm,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  tipsContinueBtn: {
+    width: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md + 2,
+    alignItems: 'center',
+  },
+  tipsContinueText: {
+    fontSize: FontSizes.lg,
     fontWeight: '700',
     color: '#fff',
   },
