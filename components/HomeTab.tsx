@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { useNavigation } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -37,6 +38,9 @@ export default function HomeTab() {
   const insets = useSafeAreaInsets();
   const { articles } = useArticles();
 
+  const navigation = useNavigation();
+  const hasAnimated = useRef(false);
+
   const heroScale = useSharedValue(1.3);
   const heroOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(0.8);
@@ -46,38 +50,45 @@ export default function HomeTab() {
   const articlesProgress = useSharedValue(0);
 
   useEffect(() => {
-    heroScale.value = withTiming(1, {
-      duration: 1200,
-      easing: Easing.out(Easing.cubic),
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (hasAnimated.current) return;
+      hasAnimated.current = true;
+
+      heroScale.value = withTiming(1, {
+        duration: 1200,
+        easing: Easing.out(Easing.cubic),
+      });
+      heroOpacity.value = withTiming(1, {
+        duration: 800,
+        easing: Easing.out(Easing.quad),
+      });
+
+      buttonScale.value = withDelay(
+        500,
+        withSpring(1, { damping: 14, stiffness: 200 }),
+      );
+      buttonOpacity.value = withDelay(
+        500,
+        withTiming(1, { duration: 500 }),
+      );
+
+      contentTranslateY.value = withDelay(
+        300,
+        withSpring(0, { damping: 20, stiffness: 180 }),
+      );
+      contentOpacity.value = withDelay(
+        300,
+        withTiming(1, { duration: 600 }),
+      );
+
+      articlesProgress.value = withDelay(
+        700,
+        withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) }),
+      );
     });
-    heroOpacity.value = withTiming(1, {
-      duration: 800,
-      easing: Easing.out(Easing.quad),
-    });
 
-    buttonScale.value = withDelay(
-      500,
-      withSpring(1, { damping: 14, stiffness: 200 }),
-    );
-    buttonOpacity.value = withDelay(
-      500,
-      withTiming(1, { duration: 500 }),
-    );
-
-    contentTranslateY.value = withDelay(
-      300,
-      withSpring(0, { damping: 20, stiffness: 180 }),
-    );
-    contentOpacity.value = withDelay(
-      300,
-      withTiming(1, { duration: 600 }),
-    );
-
-    articlesProgress.value = withDelay(
-      700,
-      withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) }),
-    );
-  }, []);
+    return unsubscribe;
+  }, [navigation]);
 
   const heroAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: heroScale.value }],

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { Stack, router, useNavigationContainerRef } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -31,7 +32,8 @@ if (errorUtils) {
 
 export default function RootLayout() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
-  const [appUserId, setAppUserId] = useState<string | null>(null);
+  const [appReady, setAppReady] = useState(false);
+  const [showSalesOnMount, setShowSalesOnMount] = useState(false);
   const navRef = useNavigationContainerRef();
 
   useEffect(() => {
@@ -43,57 +45,51 @@ export default function RootLayout() {
     setOnboardingDone(false);
   }, []);
 
-  useEffect(() => {
-    if (!onboardingDone) return;
+  const finishOnboarding = async () => {
+    // TODO: re-enable persistence once onboarding is finalized
+    // await SecureStore.setItemAsync(ONBOARDING_KEY, '1');
 
-    const initialize = async () => {
-      initCrashlytics();
-      initFacebookSDK();
-      analytics().setAnalyticsCollectionEnabled(true);
-      analytics().logEvent('app_open');
+    initCrashlytics();
+    initFacebookSDK();
+    analytics().setAnalyticsCollectionEnabled(true);
+    analytics().logEvent('app_open');
 
-      const userId = await getOrCreateUserId();
-      setAppUserId(userId);
-      await initRevenueCat(userId);
-    };
+    const userId = await getOrCreateUserId();
+    await initRevenueCat(userId);
 
-    initialize();
-  }, [onboardingDone]);
-
-  useEffect(() => {
-    if (!appUserId || !onboardingDone) return;
-
-    let checking = false;
-
-    const showSalesIfNeeded = async () => {
-      if (checking || isPaywallDismissedForSession()) return;
-      checking = true;
+    let needsSales = false;
+    if (!isPaywallDismissedForSession()) {
       try {
-        const premium = await isPremiumUser(appUserId);
-        if (!premium && navRef.isReady()) {
+        const premium = await isPremiumUser(userId);
+        if (!premium) {
           dismissPaywallForSession();
-          router.push('/sales');
+          needsSales = true;
         }
-      } catch { /* ignore */ } finally {
-        checking = false;
+      } catch { /* ignore */ }
+    }
+
+    setShowSalesOnMount(needsSales);
+    setOnboardingDone(true);
+    setAppReady(true);
+  };
+
+  useEffect(() => {
+    if (!appReady || !showSalesOnMount) return;
+    const timer = setTimeout(() => {
+      if (navRef.isReady()) {
+        router.push('/sales');
+        setTimeout(() => setShowSalesOnMount(false), 500);
       }
-    };
-
-    const timer = setTimeout(showSalesIfNeeded, 300);
-
-    return () => { clearTimeout(timer); };
-  }, [appUserId, onboardingDone]);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [appReady, showSalesOnMount]);
 
   if (onboardingDone === null) return null;
 
   if (!onboardingDone) {
     return (
       <OnboardingFlow
-        onComplete={async () => {
-          // TODO: re-enable persistence once onboarding is finalized
-          // await SecureStore.setItemAsync(ONBOARDING_KEY, '1');
-          setOnboardingDone(true);
-        }}
+        onComplete={finishOnboarding}
       />
     );
   }
@@ -162,6 +158,9 @@ export default function RootLayout() {
           }}
         />
       </Stack>
+      {showSalesOnMount && (
+        <View style={StyleSheet.compose(StyleSheet.absoluteFillObject, { backgroundColor: '#000', zIndex: 999 })} />
+      )}
     </>
   );
 }
