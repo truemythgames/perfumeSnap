@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Stack, router, useNavigationContainerRef } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+import * as SecureStore from 'expo-secure-store';
 import { Colors } from '../constants/theme';
 import { initCrashlytics, logError } from '../utils/crashlytics';
 import { initFacebookSDK } from '../services/analytics';
@@ -8,6 +10,11 @@ import analytics from '@react-native-firebase/analytics';
 import { initRevenueCat, isPremiumUser } from '../services/subscription';
 import { getOrCreateUserId } from '../services/user';
 import { isPaywallDismissedForSession, dismissPaywallForSession } from '../services/paywall';
+import OnboardingFlow from '../components/OnboardingFlow';
+
+SplashScreen.preventAutoHideAsync();
+
+const ONBOARDING_KEY = 'perfumesnap_onboarding_done';
 
 const globalErrorHandler = (error: Error, isFatal?: boolean) => {
   logError(error, isFatal ? 'Fatal JS error' : 'Non-fatal JS error');
@@ -23,10 +30,22 @@ if (errorUtils) {
 }
 
 export default function RootLayout() {
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const [appUserId, setAppUserId] = useState<string | null>(null);
   const navRef = useNavigationContainerRef();
 
   useEffect(() => {
+    // TODO: re-enable SecureStore check once onboarding is finalized
+    // SecureStore.getItemAsync(ONBOARDING_KEY)
+    //   .then(val => setOnboardingDone(val === '1'))
+    //   .catch(() => setOnboardingDone(false))
+    //   .finally(() => SplashScreen.hideAsync());
+    setOnboardingDone(false);
+  }, []);
+
+  useEffect(() => {
+    if (!onboardingDone) return;
+
     const initialize = async () => {
       initCrashlytics();
       initFacebookSDK();
@@ -39,10 +58,10 @@ export default function RootLayout() {
     };
 
     initialize();
-  }, []);
+  }, [onboardingDone]);
 
   useEffect(() => {
-    if (!appUserId) return;
+    if (!appUserId || !onboardingDone) return;
 
     let checking = false;
 
@@ -63,7 +82,21 @@ export default function RootLayout() {
     const timer = setTimeout(showSalesIfNeeded, 300);
 
     return () => { clearTimeout(timer); };
-  }, [appUserId]);
+  }, [appUserId, onboardingDone]);
+
+  if (onboardingDone === null) return null;
+
+  if (!onboardingDone) {
+    return (
+      <OnboardingFlow
+        onComplete={async () => {
+          // TODO: re-enable persistence once onboarding is finalized
+          // await SecureStore.setItemAsync(ONBOARDING_KEY, '1');
+          setOnboardingDone(true);
+        }}
+      />
+    );
+  }
 
   return (
     <>
