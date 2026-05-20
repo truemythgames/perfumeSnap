@@ -24,6 +24,16 @@ export async function scrapeProductImage(name: string, brand: string): Promise<s
   }
 }
 
+export interface DupePerfume {
+  name: string;
+  brand: string;
+}
+
+export interface Accord {
+  name: string;
+  strength: number;
+}
+
 export interface PerfumeResult {
   identified: boolean;
   confidence?: 'high' | 'medium' | 'low';
@@ -42,9 +52,18 @@ export interface PerfumeResult {
   sizesPricing?: { size: string; price: string }[];
   rating: number;
   longevity: string;
+  longevityScore?: number;
   sillage: string;
+  sillageScore?: number;
+  dayNight?: 'day' | 'night' | 'versatile';
+  accords?: Accord[];
   occasions: string[];
   seasons: string[];
+  layeringNotes?: string[];
+  dupes?: DupePerfume[];
+  popularityRank?: string;
+  reformulated?: string | null;
+  wearerProfile?: string;
   similarPerfumes: SimilarPerfume[] | string[];
   cachedSimilarListings?: SimilarPerfume[];
 }

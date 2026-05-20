@@ -87,6 +87,11 @@ export default function HomeTab() {
   }, []);
 
   useEffect(() => {
+    router.prefetch('/articles');
+    router.prefetch('/article');
+  }, []);
+
+  useEffect(() => {
     if (navigation.isFocused()) {
       runEntrance();
     }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,10 @@ const IMAGE_HEIGHT = 140;
 export default function ArticlesScreen() {
   const insets = useSafeAreaInsets();
   const { articles } = useArticles();
+
+  useEffect(() => {
+    router.prefetch('/article');
+  }, []);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + Spacing.sm }]}>

@@ -37,9 +37,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
 import { getPickedImageBase64, clearPickedImageBase64 } from '../services/imageTransfer';
-import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings, submitFeedback } from '../services/api';
+import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings, submitFeedback } from '../services/api';
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
+import SimilarProductCard, {
+  openListingUrl,
+  SIMILAR_GRID_PADDING,
+  SIMILAR_GRID_GAP,
+  SIMILAR_CARD_WIDTH,
+  getSimilarCardHeight,
+} from '../components/SimilarProductCard';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import {
   trackScreenView,
@@ -57,17 +64,7 @@ import {
 } from '../services/analytics';
 import { canAddToCollection, FREE_LIMITS, getPremiumStatus } from '../services/access';
 import { addToHistory } from '../services/history';
-
-const BADGE_MAP: Record<string, string> = { amazon: 'Amazon', ebay: 'eBay', walmart: 'Walmart' };
-
-function getBadgeLabel(retailer?: string): string | null {
-  if (!retailer) return null;
-  const key = retailer.toLowerCase();
-  for (const [match, label] of Object.entries(BADGE_MAP)) {
-    if (key.includes(match)) return label;
-  }
-  return null;
-}
+import { getResultPrefill } from '../services/resultNavigationCache';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -165,45 +162,6 @@ const PARTICLE_COUNT = 40;
 const PARTICLE_DELAYS = Array.from({ length: PARTICLE_COUNT }, (_, i) =>
   Math.round((i / PARTICLE_COUNT) * 8000 + Math.random() * 500),
 );
-
-function SimilarCardSmall({ perfume }: { perfume: SimilarPerfume }) {
-  const [imageUrl, setImageUrl] = useState<string | null>(perfume.imageUrl || null);
-  const [failed, setFailed] = useState(false);
-  const directUrl = perfume.productUrl || buildShoppingUrl(perfume.name, perfume.brand, perfume.retailer);
-
-  const hasImage = Boolean(imageUrl) && !failed;
-
-  return (
-    <TouchableOpacity
-      style={styles.similarCard}
-      activeOpacity={0.85}
-      onPress={() => {
-        trackRetailerTap(perfume.retailer || 'unknown', `${perfume.brand || ''} ${perfume.name || ''}`.trim());
-        WebBrowser.openBrowserAsync(directUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET });
-      }}
-    >
-      <View style={styles.similarImageWrap}>
-        {!hasImage && (
-          <View style={styles.similarImageFallback}>
-            <Ionicons name="flask-outline" size={40} color="#b8953e" />
-          </View>
-        )}
-        {hasImage ? (
-          <Image source={{ uri: imageUrl! }} style={styles.similarCardImage} resizeMode="cover" onError={() => setFailed(true)} />
-        ) : null}
-        {getBadgeLabel(perfume.retailer) ? (
-          <View style={styles.retailerBadge}>
-            <Text style={styles.retailerBadgeText}>{getBadgeLabel(perfume.retailer)}</Text>
-          </View>
-        ) : null}
-      </View>
-      <Text style={styles.similarPriceCheck}>Check Site</Text>
-      <Text style={styles.similarName} numberOfLines={2}>
-        {perfume.brand} {perfume.name}
-      </Text>
-    </TouchableOpacity>
-  );
-}
 
 function parseNumericPrice(raw?: string): number | null {
   if (!raw) return null;
@@ -318,6 +276,7 @@ export default function ResultScreen() {
   const params = useLocalSearchParams<{
     imageUri?: string;
     prefill?: string;
+    prefillKey?: string;
     fromCollection?: string;
     lookupName?: string;
     lookupBrand?: string;
@@ -335,6 +294,12 @@ export default function ResultScreen() {
     if (Array.isArray(v)) return v[0];
     return v;
   }, [params.prefill]);
+
+  const prefillKey = useMemo(() => {
+    const v = params.prefillKey;
+    if (Array.isArray(v)) return v[0];
+    return v;
+  }, [params.prefillKey]);
 
   const fromCollection = useMemo(() => {
     const v = params.fromCollection;
@@ -361,6 +326,9 @@ export default function ResultScreen() {
     imageKey?: string | null;
     cachedSimilarListings?: SimilarPerfume[];
   }) | null => {
+    if (prefillKey) {
+      return getResultPrefill(prefillKey);
+    }
     if (!prefillRaw) return null;
     try {
       return JSON.parse(prefillRaw) as PerfumeResult & {
@@ -371,9 +339,10 @@ export default function ResultScreen() {
     } catch {
       return null;
     }
-  }, [prefillRaw]);
+  }, [prefillKey, prefillRaw]);
 
-  const prefillInvalid = Boolean(prefillRaw && !collectionPerfume);
+  const prefillInvalid = Boolean((prefillKey || prefillRaw) && !collectionPerfume);
+  const isCollectionDetail = fromCollection === '1' && Boolean(collectionPerfume) && !prefillInvalid;
 
   const perfumeToResult = (
     p: PerfumeResult & { imageUri?: string | null; imageKey?: string | null },
@@ -407,11 +376,14 @@ export default function ResultScreen() {
   const [photoFullscreen, setPhotoFullscreen] = useState(false);
   const [savedToCollection, setSavedToCollection] = useState(() => fromCollection === '1');
   const [saving, setSaving] = useState(false);
+  const hasCachedSimilar = (collectionPerfume?.cachedSimilarListings?.length ?? 0) > 0;
   const [similarListings, setSimilarListings] = useState<SimilarPerfume[]>(() => {
     if (!collectionPerfume?.cachedSimilarListings) return [];
     return collectionPerfume.cachedSimilarListings;
   });
-  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarLoading, setSimilarLoading] = useState(
+    () => isCollectionDetail && !hasCachedSimilar,
+  );
   const [similarResolvedOnProcess, setSimilarResolvedOnProcess] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
   const [premiumStatusChecked, setPremiumStatusChecked] = useState(false);
@@ -426,9 +398,8 @@ export default function ResultScreen() {
 
   useEffect(() => {
     if (!result) return;
-    const cachedFromCollection = collectionPerfume?.cachedSimilarListings || [];
-    if (fromCollection === '1' && cachedFromCollection.length > 0) {
-      setSimilarListings(cachedFromCollection);
+    if (fromCollection === '1') {
+      setSimilarListings(collectionPerfume?.cachedSimilarListings || []);
       setSimilarLoading(false);
       return;
     }
@@ -437,20 +408,26 @@ export default function ResultScreen() {
       return;
     }
     setSimilarLoading(true);
-    getSimilarListings(result.name, result.brand).then((listings) => {
-      setSimilarListings(listings);
-      setSimilarLoading(false);
-    }).catch(() => setSimilarLoading(false));
+    getSimilarListings(result.name, result.brand)
+      .then((listings) => {
+        setSimilarListings(listings);
+        setSimilarLoading(false);
+      })
+      .catch(() => setSimilarLoading(false));
   }, [result?.name, result?.brand, fromCollection, collectionPerfume?.cachedSimilarListings, similarResolvedOnProcess]);
 
   const openAllSimilar = useCallback(() => {
     if (!result) return;
     trackViewSimilar(result.name);
+    if (fromCollection === '1' && prefillKey) {
+      router.push({ pathname: '/similar', params: { prefillKey } });
+      return;
+    }
     router.push({
       pathname: '/similar',
       params: { name: result.name, brand: result.brand },
     });
-  }, [result]);
+  }, [result, fromCollection, prefillKey]);
   const openPerfumeChat = useCallback(() => {
     if (!result) return;
     trackChatOpened(`${result.brand} ${result.name}`);
@@ -505,43 +482,6 @@ export default function ResultScreen() {
     const display = formatSingleCurrencyRange(min, max, DEFAULT_CURRENCY);
     return { display };
   }, [similarListings]);
-  const rarityInsights = useMemo(() => {
-    const comparableListings = similarListings.filter((item) => !isLikelySampleOrDecant(item));
-    if (comparableListings.length === 0) return null;
-
-    const listingCount = comparableListings.length;
-    const retailers = new Set(
-      comparableListings
-        .map((item) => (item.retailer || '').trim().toLowerCase())
-        .filter(Boolean),
-    );
-    const retailerCount = retailers.size;
-
-    let score = 0;
-    if (listingCount <= 2) score = 0.9;
-    else if (listingCount <= 4) score = 0.78;
-    else if (listingCount <= 7) score = 0.64;
-    else if (listingCount <= 12) score = 0.5;
-    else if (listingCount <= 20) score = 0.34;
-    else score = 0.2;
-
-    if (retailerCount <= 2) score += 0.06;
-    else if (retailerCount >= 7) score -= 0.05;
-
-    const normalized = Math.max(0, Math.min(1, score));
-
-    let label = 'Very Common';
-    if (normalized >= 0.82) label = 'Extremely Rare';
-    else if (normalized >= 0.64) label = 'Rare';
-    else if (normalized >= 0.46) label = 'Uncommon';
-    else if (normalized >= 0.28) label = 'Common';
-
-    return {
-      label,
-      normalized,
-      listingCount,
-    };
-  }, [similarListings]);
 
   const insets = useSafeAreaInsets();
 
@@ -574,12 +514,16 @@ export default function ResultScreen() {
 
   useEffect(() => {
     if (!showResult) return;
+    if (isCollectionDetail) {
+      resultScreenEnter.value = 1;
+      return;
+    }
     resultScreenEnter.value = 0;
     resultScreenEnter.value = withTiming(1, {
       duration: 460,
       easing: Easing.out(Easing.cubic),
     });
-  }, [showResult]);
+  }, [showResult, isCollectionDetail]);
 
   const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
     scrollY.value = event.nativeEvent.contentOffset.y;
@@ -865,6 +809,7 @@ export default function ResultScreen() {
       }
       const perfume = await identifyPerfume(base64, mimeType, controller.signal);
       if (controller.signal.aborted) return;
+
       let listings: SimilarPerfume[] = [];
       try {
         listings = await getSimilarListings(perfume.name, perfume.brand);
@@ -907,7 +852,9 @@ export default function ResultScreen() {
   }, [lookupName, lookupBrand, showError, startStepAnimation]);
 
   useEffect(() => {
-    trackScreenView(isLookupMode ? 'result_lookup' : fromCollection === '1' ? 'result_collection' : 'result_scan');
+    queueMicrotask(() => {
+      trackScreenView(isLookupMode ? 'result_lookup' : fromCollection === '1' ? 'result_collection' : 'result_scan');
+    });
     if (collectionPerfume) return;
     if (isLookupMode) {
       doLookup();
@@ -1101,6 +1048,8 @@ export default function ResultScreen() {
   }
 
   if (showResult && result) {
+    const ResultBody = isCollectionDetail ? View : Animated.View;
+    const resultBodyStyle = isCollectionDetail ? undefined : resultScreenAnimStyle;
     const displayedPrice = livePriceStats
       ? livePriceStats.display
       : formatPriceRange(result.priceRange, DEFAULT_CURRENCY);
@@ -1146,7 +1095,7 @@ export default function ResultScreen() {
                           <Image
                             source={{ uri: displayImageUri }}
                             style={styles.resultFrameImage}
-                            fadeDuration={200}
+                            fadeDuration={isCollectionDetail ? 0 : 200}
                           />
                         ) : (
                           <View style={styles.resultFramePlaceholder}>
@@ -1171,10 +1120,17 @@ export default function ResultScreen() {
             />
           </View>
 
-          <Animated.View style={resultScreenAnimStyle}>
+          <ResultBody style={resultBodyStyle}>
             {/* Main Info */}
             <View style={styles.mainInfo}>
             <Text style={styles.name}>{result.name}</Text>
+
+            {isCollectionDetail && similarLoading && !livePriceStats && !result.priceRange && (
+              <View style={styles.collectionLoadingRow}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.collectionLoadingText}>Loading prices & listings…</Text>
+              </View>
+            )}
 
             {/* Price card */}
             {(livePriceStats || result.priceRange) && (
@@ -1207,6 +1163,7 @@ export default function ResultScreen() {
                 </LinearGradient>
               </View>
             )}
+
 
             {(livePriceStats || result.priceRange) && fromCollection !== '1' && !collectionPerfume && result.confidence !== 'low' && (
               <View style={styles.feedbackCard}>
@@ -1279,7 +1236,7 @@ export default function ResultScreen() {
 
           </View>
 
-            {(similarLoading || similarListings.length > 0) && (
+            {(similarLoading || similarListings.length > 0 || isCollectionDetail) && (
             <View style={styles.similarSection}>
             <TouchableOpacity
               style={styles.similarHeader}
@@ -1299,7 +1256,18 @@ export default function ResultScreen() {
                 contentContainerStyle={styles.similarScroll}
               >
                 {similarListings.slice(0, 5).map((p, i) => (
-                  <SimilarCardSmall key={i} perfume={p} />
+                  <SimilarProductCard
+                    key={i}
+                    perfume={p}
+                    variant="horizontal"
+                    onPress={() => {
+                      const title = `${p.brand || ''} ${p.name || ''}`.trim();
+                      trackRetailerTap(p.retailer || 'unknown', title);
+                      WebBrowser.openBrowserAsync(openListingUrl(p), {
+                        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+                      });
+                    }}
+                  />
                 ))}
                 {similarListings.length > 5 && (
                   <TouchableOpacity
@@ -1319,28 +1287,6 @@ export default function ResultScreen() {
             <View style={styles.section}>
             <Text style={styles.sectionTitle}>About</Text>
             <Text style={styles.description}>{result.description}</Text>
-            {rarityInsights ? (
-              <View style={styles.rarityCard}>
-                <Text style={styles.rarityHeading}>Market Rarity</Text>
-                <Text style={styles.rarityLabel}>{rarityInsights.label}</Text>
-                <View style={styles.rarityTrack}>
-                  <LinearGradient
-                    colors={['#47613f', '#8b7a46', '#c8943c', '#b16535']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[styles.rarityFill, { width: `${Math.max(6, rarityInsights.normalized * 100)}%` }]}
-                  />
-                  <View style={[styles.rarityKnob, { left: `${Math.max(1, Math.min(99, rarityInsights.normalized * 100))}%` }]} />
-                </View>
-                <View style={styles.rarityScaleRow}>
-                  <Text style={styles.rarityScaleText}>Very Common</Text>
-                  <Text style={styles.rarityScaleText}>Extremely Rare</Text>
-                </View>
-                <Text style={styles.raritySubtext}>
-                  Based on similar listing volume
-                </Text>
-              </View>
-            ) : null}
           </View>
 
             <View style={styles.section}>
@@ -1371,11 +1317,73 @@ export default function ResultScreen() {
               </View>
             </View>
 
+            {result.accords && result.accords.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Scent Profile</Text>
+              <View style={styles.card}>
+                {result.accords.slice(0, 8).map((accord, i) => (
+                  <View key={i} style={styles.accordRow}>
+                    <Text style={styles.accordLabel}>{accord.name}</Text>
+                    <View style={styles.accordTrack}>
+                      <View style={[styles.accordFill, { width: `${Math.max(4, accord.strength)}%` }]} />
+                    </View>
+                    <Text style={styles.accordPercent}>{accord.strength}%</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+            )}
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Performance</Text>
+              <View style={styles.card}>
+                <View style={styles.perfRow}>
+                  <Text style={styles.perfLabel}>⏱️ Longevity</Text>
+                  <Text style={styles.perfValue}>{result.longevity}</Text>
+                </View>
+                {result.longevityScore != null && (
+                  <View style={styles.perfGaugeWrap}>
+                    <View style={styles.perfGaugeTrack}>
+                      <View style={[styles.perfGaugeFill, { width: `${result.longevityScore * 10}%` }]} />
+                    </View>
+                    <Text style={styles.perfGaugeLabel}>{result.longevityScore}/10</Text>
+                  </View>
+                )}
+
+                <View style={[styles.perfRow, { marginTop: Spacing.md }]}>
+                  <Text style={styles.perfLabel}>💨 Sillage</Text>
+                  <Text style={styles.perfValue}>{result.sillage}</Text>
+                </View>
+                {result.sillageScore != null && (
+                  <View style={styles.perfGaugeWrap}>
+                    <View style={styles.perfGaugeTrack}>
+                      <View style={[styles.perfGaugeFill, styles.perfGaugeFillSillage, { width: `${result.sillageScore * 10}%` }]} />
+                    </View>
+                    <Text style={styles.perfGaugeLabel}>{result.sillageScore}/10</Text>
+                  </View>
+                )}
+
+                {result.dayNight && (
+                  <View style={[styles.perfRow, { marginTop: Spacing.md }]}>
+                    <Text style={styles.perfLabel}>
+                      {result.dayNight === 'day' ? '☀️' : result.dayNight === 'night' ? '🌙' : '🔄'} Best Worn
+                    </Text>
+                    <View style={styles.dayNightBadge}>
+                      <Text style={styles.dayNightText}>
+                        {result.dayNight === 'day' ? 'Daytime' : result.dayNight === 'night' ? 'Nighttime' : 'Day & Night'}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </View>
+
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Details</Text>
               <View style={styles.card}>
-                <InfoRow icon="⏱️" label="Longevity" value={result.longevity} />
-                <InfoRow icon="💨" label="Sillage" value={result.sillage} />
+                <InfoRow icon="💧" label="Concentration" value={result.concentration} />
+                <InfoRow icon="🌿" label="Family" value={result.fragranceFamily} />
+                <InfoRow icon="⚥" label="Gender" value={result.gender} />
                 <InfoRow icon="📅" label="Year" value={result.yearLaunched} />
                 {shouldShowPerfumer ? (
                   <InfoRow icon="👃" label="Perfumer" value={perfumerValue} />
@@ -1386,6 +1394,13 @@ export default function ResultScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Best For</Text>
               <View style={styles.card}>
+                {result.wearerProfile ? (
+                  <>
+                    <Text style={styles.cardLabel}>Who Wears This</Text>
+                    <Text style={styles.wearerProfileText}>{result.wearerProfile}</Text>
+                    <View style={{ height: Spacing.md }} />
+                  </>
+                ) : null}
                 <Text style={styles.cardLabel}>Occasions</Text>
                 <View style={styles.chipRow}>
                   {result.occasions.map((o, i) => (
@@ -1400,6 +1415,68 @@ export default function ResultScreen() {
                 </View>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={styles.fragranticaLink}
+              activeOpacity={0.7}
+              onPress={() => {
+                const q = encodeURIComponent(`${result.brand} ${result.name}`);
+                WebBrowser.openBrowserAsync(`https://www.fragrantica.com/search/?query=${q}`);
+              }}
+            >
+              <Ionicons name="star-outline" size={16} color={Colors.primary} />
+              <Text style={styles.fragranticaText}>Read community reviews on Fragrantica</Text>
+              <Ionicons name="open-outline" size={14} color={Colors.textSecondary} />
+            </TouchableOpacity>
+
+            {(result.popularityRank || result.reformulated) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Popularity & Status</Text>
+              <View style={styles.card}>
+                {result.popularityRank ? (
+                  <View style={styles.popularityRow}>
+                    <Ionicons name="trending-up" size={18} color={Colors.primary} />
+                    <Text style={styles.popularityText}>{result.popularityRank}</Text>
+                  </View>
+                ) : null}
+                {result.reformulated ? (
+                  <View style={[styles.popularityRow, result.popularityRank ? { marginTop: Spacing.md, paddingTop: Spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.08)' } : undefined]}>
+                    <Ionicons name="flask-outline" size={18} color="#c8943c" />
+                    <Text style={styles.popularityText}>{result.reformulated}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+            )}
+
+            {result.layeringNotes && result.layeringNotes.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Layering Suggestions</Text>
+              <View style={styles.card}>
+                <Text style={styles.layeringHint}>Pair this fragrance with:</Text>
+                {result.layeringNotes.map((note, i) => (
+                  <View key={i} style={styles.layeringItem}>
+                    <Ionicons name="add-circle-outline" size={16} color={Colors.primary} />
+                    <Text style={styles.layeringText}>{note}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+            )}
+
+            {result.dupes && result.dupes.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Affordable Alternatives</Text>
+              {result.dupes.map((dupe, i) => (
+                <View key={i} style={styles.dupeCard}>
+                  <View style={styles.dupeInfo}>
+                    <Text style={styles.dupeName}>{dupe.name}</Text>
+                    <Text style={styles.dupeBrand}>{dupe.brand}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+            )}
 
             <View style={styles.section}>
               <TouchableOpacity
@@ -1490,8 +1567,12 @@ export default function ResultScreen() {
             </View>
             )}
 
+            <Text style={styles.disclaimer}>
+              Information provided by AI and may not be fully accurate. Prices from live retailer data.
+            </Text>
+
             <View style={{ height: 100 }} />
-          </Animated.View>
+          </ResultBody>
         </ScrollView>
 
         {/* Sticky back button */}
@@ -2069,6 +2150,17 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginTop: Spacing.xs,
   },
+  collectionLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  collectionLoadingText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textSecondary,
+  },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2307,64 +2399,51 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#2a1f0e',
   },
-  rarityCard: {
-    marginTop: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: 'rgba(200,148,60,0.28)',
-    backgroundColor: Colors.surface,
-    padding: Spacing.md,
+  retailerPricesSection: {
+    marginTop: Spacing.lg,
   },
-  rarityHeading: {
-    fontSize: FontSizes.sm,
-    color: Colors.textMuted,
+  retailerPricesTitle: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
     textTransform: 'uppercase',
-    letterSpacing: 1.1,
+    letterSpacing: 1,
+    marginBottom: Spacing.sm,
     fontWeight: '700',
   },
-  rarityLabel: {
-    marginTop: Spacing.xs,
-    fontSize: FontSizes.xl,
-    fontWeight: '800',
-    color: Colors.primary,
-  },
-  rarityTrack: {
-    marginTop: Spacing.md,
-    height: 10,
-    borderRadius: BorderRadius.full,
-    backgroundColor: '#2f2822',
-    overflow: 'visible',
-    position: 'relative',
-  },
-  rarityFill: {
-    height: 10,
-    borderRadius: BorderRadius.full,
-  },
-  rarityKnob: {
-    position: 'absolute',
-    top: -5,
-    marginLeft: -10,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#f1d08b',
-    borderWidth: 2,
-    borderColor: '#5a3f1d',
-  },
-  rarityScaleRow: {
-    marginTop: Spacing.sm,
+  retailerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
-  rarityScaleText: {
-    fontSize: FontSizes.xs,
-    color: Colors.textSecondary,
+  retailerInfo: {
+    flex: 1,
+  },
+  retailerName: {
+    color: Colors.text,
+    fontSize: FontSizes.sm,
     fontWeight: '600',
   },
-  raritySubtext: {
-    marginTop: Spacing.sm,
+  retailerItemName: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    marginTop: 2,
+  },
+  retailerPriceBadge: {
+    backgroundColor: 'rgba(71,97,63,0.25)',
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    marginLeft: Spacing.sm,
+  },
+  retailerPriceText: {
+    color: '#8bb97a',
     fontSize: FontSizes.sm,
-    color: Colors.textMuted,
+    fontWeight: '700',
   },
   sectionSubtitle: {
     fontSize: FontSizes.sm,
@@ -2375,13 +2454,12 @@ const styles = StyleSheet.create({
   similarSection: {
     marginTop: Spacing.lg,
     paddingVertical: Spacing.lg,
-    paddingLeft: Spacing.lg,
+    paddingHorizontal: SIMILAR_GRID_PADDING,
   },
   similarHeader: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: Spacing.sm,
-    paddingRight: Spacing.lg,
     marginBottom: Spacing.sm,
   },
   similarTitle: {
@@ -2397,68 +2475,16 @@ const styles = StyleSheet.create({
   similarDivider: {
     height: 1,
     backgroundColor: 'rgba(200,148,60,0.2)',
-    marginRight: Spacing.lg,
     marginBottom: Spacing.lg,
   },
   similarScroll: {
-    paddingRight: Spacing.lg,
-    gap: Spacing.md,
-  },
-  similarCard: {
-    width: 140,
-  },
-  similarImageWrap: {
-    width: 140,
-    height: 150,
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-    backgroundColor: '#e8dece',
-    marginBottom: Spacing.sm,
-  },
-  similarCardImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  similarImageFallback: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  retailerBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#ab7f45',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 5,
-  },
-  retailerBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  similarPrice: {
-    fontSize: FontSizes.md,
-    fontWeight: '800',
-    color: Colors.text,
-  },
-  similarPriceCheck: {
-    fontSize: FontSizes.md,
-    fontWeight: '700',
-    fontStyle: 'italic',
-    color: Colors.textSecondary,
-  },
-  similarName: {
-    fontSize: FontSizes.xs,
-    color: Colors.text,
-    fontWeight: '500',
-    marginTop: 2,
-    lineHeight: 15,
+    paddingRight: SIMILAR_GRID_PADDING,
+    gap: SIMILAR_GRID_GAP,
+    alignItems: 'flex-start',
   },
   viewAllCard: {
-    width: 90,
+    width: SIMILAR_CARD_WIDTH,
+    minHeight: getSimilarCardHeight(),
     justifyContent: 'center',
     alignItems: 'center',
     gap: Spacing.sm,
@@ -2548,6 +2574,186 @@ const styles = StyleSheet.create({
   askPerfumeText: {
     color: '#f5ead4',
     fontSize: FontSizes.md,
+    fontWeight: '700',
+  },
+  accordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  accordLabel: {
+    width: 75,
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    fontWeight: '600',
+  },
+  accordTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginHorizontal: Spacing.sm,
+    overflow: 'hidden',
+  },
+  accordFill: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+  },
+  accordPercent: {
+    width: 36,
+    textAlign: 'right',
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+  },
+  perfRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  perfLabel: {
+    color: Colors.text,
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+  },
+  perfValue: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+  },
+  perfGaugeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: Spacing.sm,
+  },
+  perfGaugeTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+  },
+  perfGaugeFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#8bb97a',
+  },
+  perfGaugeFillSillage: {
+    backgroundColor: '#7a9bb9',
+  },
+  perfGaugeLabel: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    width: 30,
+    textAlign: 'right',
+  },
+  dayNightBadge: {
+    backgroundColor: 'rgba(200,148,60,0.15)',
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+  },
+  dayNightText: {
+    color: '#c8943c',
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+  },
+  wearerProfileText: {
+    color: Colors.text,
+    fontSize: FontSizes.sm,
+    lineHeight: 20,
+    opacity: 0.85,
+    marginTop: 4,
+  },
+  fragranticaLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+  },
+  fragranticaText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    fontWeight: '500',
+  },
+  disclaimer: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: Spacing.lg,
+    marginHorizontal: Spacing.xl,
+    lineHeight: 16,
+    opacity: 0.5,
+  },
+  popularityRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  popularityText: {
+    color: Colors.text,
+    fontSize: FontSizes.sm,
+    lineHeight: 20,
+    flex: 1,
+    opacity: 0.85,
+  },
+  layeringHint: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  layeringItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: 6,
+  },
+  layeringText: {
+    color: Colors.text,
+    fontSize: FontSizes.sm,
+    flex: 1,
+  },
+  dupeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  dupeInfo: {
+    flex: 1,
+  },
+  dupeName: {
+    color: Colors.text,
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+  },
+  dupeBrand: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    marginTop: 2,
+  },
+  dupePriceBadge: {
+    backgroundColor: 'rgba(71,97,63,0.25)',
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    marginLeft: Spacing.sm,
+  },
+  dupePriceText: {
+    color: '#8bb97a',
+    fontSize: FontSizes.xs,
     fontWeight: '700',
   },
   retakeButton: {

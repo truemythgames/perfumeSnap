@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, router, useNavigationContainerRef } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -16,6 +17,14 @@ import OnboardingFlow from '../components/OnboardingFlow';
 SplashScreen.preventAutoHideAsync();
 
 const ONBOARDING_KEY = 'perfumesnap_onboarding_done';
+
+/** Native iOS edge swipe-back; fullScreenGesture off so vertical scroll is not stolen. */
+const NATIVE_PUSH_SCREEN_OPTIONS = {
+  animation: 'slide_from_right' as const,
+  gestureEnabled: true,
+  fullScreenGestureEnabled: false,
+  animationMatchesGesture: true,
+};
 
 const globalErrorHandler = (error: Error, isFatal?: boolean) => {
   logError(error, isFatal ? 'Fatal JS error' : 'Non-fatal JS error');
@@ -96,27 +105,32 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!appReady || !showSalesOnMount) return;
-    const timer = setTimeout(() => {
+    let cancelled = false;
+    const tryPush = () => {
+      if (cancelled) return;
       if (navRef.isReady()) {
         router.push('/sales');
         setTimeout(() => setShowSalesOnMount(false), 500);
+      } else {
+        setTimeout(tryPush, 100);
       }
-    }, 50);
-    return () => clearTimeout(timer);
+    };
+    setTimeout(tryPush, 50);
+    return () => { cancelled = true; };
   }, [appReady, showSalesOnMount]);
 
   if (onboardingDone === null) return null;
 
   if (!onboardingDone) {
     return (
-      <OnboardingFlow
-        onComplete={finishOnboarding}
-      />
+      <GestureHandlerRootView style={styles.root}>
+        <OnboardingFlow onComplete={finishOnboarding} />
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <>
+    <GestureHandlerRootView style={styles.root}>
       <StatusBar style="light" />
       <Stack
         screenOptions={{
@@ -136,6 +150,9 @@ export default function RootLayout() {
             animationDuration: 250,
           }}
         />
+        <Stack.Screen name="collection-detail" options={NATIVE_PUSH_SCREEN_OPTIONS} />
+        <Stack.Screen name="articles" options={NATIVE_PUSH_SCREEN_OPTIONS} />
+        <Stack.Screen name="article" options={NATIVE_PUSH_SCREEN_OPTIONS} />
         <Stack.Screen
           name="similar"
           options={{
@@ -182,6 +199,10 @@ export default function RootLayout() {
       {showSalesOnMount && (
         <View style={StyleSheet.compose(StyleSheet.absoluteFillObject, { backgroundColor: '#000', zIndex: 999 })} />
       )}
-    </>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

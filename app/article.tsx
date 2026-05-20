@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Image,
   Dimensions,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -85,7 +85,14 @@ export default function ArticleScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} bounces onScroll={handleScroll} scrollEventThrottle={16}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        showsVerticalScrollIndicator={false}
+        bounces
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+      >
         {/* Hero Image */}
         {article.imageUrl ? (
           <View style={styles.heroWrap}>
@@ -151,11 +158,10 @@ export default function ArticleScreen() {
           })}
         </View>
 
-        <View style={{ height: insets.bottom + 40 }} />
       </ScrollView>
 
       {/* Sticky back button — outside ScrollView */}
-      <View style={[styles.backRow, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.backRow, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}>
           <Animated.View style={[styles.heroBackButton, backBgStyle]}>
             <Animated.View style={[StyleSheet.absoluteFill, styles.heroBackIconWrap, backIconWhiteStyle]}>
@@ -175,6 +181,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  scroll: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

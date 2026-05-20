@@ -70,7 +70,11 @@ export async function getCustomerInfo(appUserId?: string): Promise<CustomerInfo 
   }
 }
 
+// Set to true during development to force non-premium for testing
+const DEV_FORCE_FREE = __DEV__ && false;
+
 export async function isPremiumUser(appUserId?: string): Promise<boolean> {
+  if (DEV_FORCE_FREE) return false;
   const customerInfo = await getCustomerInfo(appUserId);
   if (!customerInfo) return false;
   return Boolean(customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID]);

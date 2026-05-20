@@ -72,34 +72,9 @@ export default function MainScreen() {
     if (page !== activeTab) switchTab(page);
   };
 
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
-  const decided = useSharedValue(false);
-
   const panGesture = Gesture.Pan()
-    .manualActivation(true)
-    .onTouchesDown((e) => {
-      const t = e.allTouches[0];
-      if (t) {
-        startX.value = t.absoluteX;
-        startY.value = t.absoluteY;
-        decided.value = false;
-      }
-    })
-    .onTouchesMove((e, state) => {
-      if (decided.value) return;
-      const t = e.allTouches[0];
-      if (!t) return;
-      const dx = Math.abs(t.absoluteX - startX.value);
-      const dy = Math.abs(t.absoluteY - startY.value);
-      if (dx > 10 && dx > dy * 1.2) {
-        decided.value = true;
-        state.activate();
-      } else if (dy > 10) {
-        decided.value = true;
-        state.fail();
-      }
-    })
+    .activeOffsetX([-20, 20])
+    .failOffsetY([-12, 12])
     .onUpdate((e) => {
       const base = -activeTab * SCREEN_WIDTH;
       const next = base + e.translationX;
@@ -115,7 +90,6 @@ export default function MainScreen() {
       }
     })
     .onEnd((e) => {
-      const base = -activeTab * SCREEN_WIDTH;
       const displacement = e.translationX;
       const velocity = e.velocityX;
       const shouldSwipe =
@@ -309,76 +283,61 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     color: Colors.textMuted,
-    marginTop: 2,
   },
   tabLabelActive: {
     color: Colors.primary,
     fontWeight: '600',
   },
   cameraNotch: {
+    width: CAMERA_BTN_SIZE + 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -(CAMERA_BTN_SIZE / 2 + 8),
-    width: CAMERA_BTN_SIZE + 20,
-    height: CAMERA_BTN_SIZE + 16,
-    borderRadius: (CAMERA_BTN_SIZE + 20) / 2,
-    backgroundColor: '#141110',
-    paddingTop: 4,
+    justifyContent: 'flex-end',
+    marginTop: -NOTCH_OVERFLOW,
   },
   cameraButtonWrapper: {
-    borderRadius: CAMERA_BTN_SIZE / 2,
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: Colors.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.45,
-        shadowRadius: 14,
+        shadowRadius: 10,
       },
-      android: {
-        elevation: 10,
-      },
+      android: { elevation: 8 },
     }),
   },
   cameraButton: {
     width: CAMERA_BTN_SIZE,
     height: CAMERA_BTN_SIZE,
     borderRadius: CAMERA_BTN_SIZE / 2,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#141110',
   },
   editOverlay: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: NOTCH_OVERFLOW,
-    backgroundColor: Colors.surface,
+    bottom: 0,
+    backgroundColor: '#141110',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(200,148,60,0.2)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 14,
-      },
-      android: { elevation: 20 },
-    }),
+    paddingTop: Spacing.md,
+    zIndex: 50,
   },
   editOverlayRow: {
-    flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-around',
-    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
   },
   editOverlayBtn: {
     alignItems: 'center',
     gap: 4,
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
+    minWidth: 72,
   },
   editOverlayText: {
-    fontSize: FontSizes.xs,
+    fontSize: 12,
     fontWeight: '600',
   },
 });

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
@@ -12,82 +11,25 @@ import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SimilarPerfume, getSimilarListings, buildShoppingUrl } from '../services/api';
-import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
+import { getSimilarListings } from '../services/api';
+import { getResultPrefill } from '../services/resultNavigationCache';
+import { Colors, FontSizes, Spacing } from '../constants/theme';
 import { trackScreenView, trackRetailerTap } from '../services/analytics';
 import { getPremiumStatus } from '../services/access';
-
-const BADGE_MAP: Record<string, string> = { amazon: 'Amazon', ebay: 'eBay', walmart: 'Walmart' };
-
-function getBadgeLabel(retailer?: string): string | null {
-  if (!retailer) return null;
-  const key = retailer.toLowerCase();
-  for (const [match, label] of Object.entries(BADGE_MAP)) {
-    if (key.includes(match)) return label;
-  }
-  return null;
-}
-
-const CARD_IMAGE_HEIGHTS = [138, 156, 148, 166, 144, 160, 152, 170];
-
-function getTitle(perfume: SimilarPerfume): string {
-  const title = `${perfume.brand || ''} ${perfume.name || ''}`.trim();
-  if (title) return title;
-  if (perfume.retailer) return `${perfume.retailer} product listing`;
-  return 'Perfume listing';
-}
-
-function PerfumeCard({ perfume, idx }: { perfume: SimilarPerfume; idx: number }) {
-  const [failed, setFailed] = useState(false);
-  const directUrl = perfume.productUrl || buildShoppingUrl(perfume.name, perfume.brand, perfume.retailer);
-  const imageUrl = perfume.imageUrl || null;
-  const hasImage = Boolean(imageUrl) && !failed;
-  const title = getTitle(perfume);
-  const imageHeight = CARD_IMAGE_HEIGHTS[idx % CARD_IMAGE_HEIGHTS.length];
-
-  return (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.85}
-      onPress={() => {
-        trackRetailerTap(perfume.retailer || 'unknown', title);
-        WebBrowser.openBrowserAsync(directUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET });
-      }}
-    >
-      <View style={[styles.imageWrap, { height: imageHeight }]}>
-        {!hasImage && (
-          <View style={styles.imageFallback}>
-            <Ionicons name="flask-outline" size={36} color="#b8953e" />
-          </View>
-        )}
-        {hasImage ? (
-          <Image
-            source={{ uri: imageUrl! }}
-            style={styles.cardImage}
-            resizeMode="cover"
-            onError={() => setFailed(true)}
-          />
-        ) : null}
-        {getBadgeLabel(perfume.retailer) ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{getBadgeLabel(perfume.retailer)}</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.name} numberOfLines={2}>
-          {title}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
+import SimilarProductCard, {
+  getListingTitle,
+  openListingUrl,
+  splitIntoMasonryColumns,
+  SIMILAR_GRID_PADDING,
+  SIMILAR_GRID_GAP,
+} from '../components/SimilarProductCard';
 
 export default function SimilarScreen() {
-  const params = useLocalSearchParams<{ name?: string; brand?: string }>();
+  const params = useLocalSearchParams<{ name?: string; brand?: string; prefillKey?: string }>();
+  const prefillKey = Array.isArray(params.prefillKey) ? params.prefillKey[0] : params.prefillKey;
   const insets = useSafeAreaInsets();
 
-  const [perfumes, setPerfumes] = useState<SimilarPerfume[]>([]);
+  const [perfumes, setPerfumes] = useState<Awaited<ReturnType<typeof getSimilarListings>>>([]);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [premiumChecked, setPremiumChecked] = useState(false);
@@ -103,6 +45,14 @@ export default function SimilarScreen() {
       setLoading(false);
       return;
     }
+
+    if (prefillKey) {
+      const cached = getResultPrefill(prefillKey)?.cachedSimilarListings ?? [];
+      setPerfumes(cached);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const name = params.name;
     const brand = params.brand || '';
@@ -116,11 +66,17 @@ export default function SimilarScreen() {
       setPerfumes(results);
       setLoading(false);
     });
-  }, [params.name, params.brand, premiumChecked, isPremium]);
+  }, [params.name, params.brand, prefillKey, premiumChecked, isPremium]);
 
-  const left: SimilarPerfume[] = [];
-  const right: SimilarPerfume[] = [];
-  perfumes.forEach((p, i) => (i % 2 === 0 ? left : right).push(p));
+  const { left, right } = splitIntoMasonryColumns(perfumes);
+
+  const openListing = (perfume: (typeof perfumes)[0]) => {
+    const title = getListingTitle(perfume);
+    trackRetailerTap(perfume.retailer || 'unknown', title);
+    WebBrowser.openBrowserAsync(openListingUrl(perfume), {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+    });
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -153,10 +109,26 @@ export default function SimilarScreen() {
         >
           <View style={styles.columns}>
             <View style={styles.column}>
-              {left.map((p, i) => <PerfumeCard key={i * 2} perfume={p} idx={i * 2} />)}
+              {left.map(({ item, globalIndex }) => (
+                <SimilarProductCard
+                  key={`l-${globalIndex}`}
+                  perfume={item}
+                  variant="masonry"
+                  masonryIndex={globalIndex}
+                  onPress={() => openListing(item)}
+                />
+              ))}
             </View>
             <View style={styles.column}>
-              {right.map((p, i) => <PerfumeCard key={i * 2 + 1} perfume={p} idx={i * 2 + 1} />)}
+              {right.map(({ item, globalIndex }) => (
+                <SimilarProductCard
+                  key={`r-${globalIndex}`}
+                  perfume={item}
+                  variant="masonry"
+                  masonryIndex={globalIndex}
+                  onPress={() => openListing(item)}
+                />
+              ))}
             </View>
           </View>
         </ScrollView>
@@ -189,63 +161,17 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   masonry: {
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: SIMILAR_GRID_PADDING,
     paddingTop: Spacing.sm,
     paddingBottom: Spacing.xxl,
   },
   columns: {
     flexDirection: 'row',
-    gap: Spacing.sm,
+    gap: SIMILAR_GRID_GAP,
   },
   column: {
     flex: 1,
-    gap: Spacing.sm,
-  },
-  card: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#ede4d3',
-  },
-  imageWrap: {
-    width: '100%',
-    overflow: 'hidden',
-    backgroundColor: '#e8dece',
-  },
-  cardImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  imageFallback: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  badge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    backgroundColor: '#ab7f45',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 5,
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  cardBody: {
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 9,
-    minHeight: 64,
-  },
-  name: {
-    fontSize: 15,
-    color: '#1f1b16',
-    lineHeight: 20,
-    fontWeight: '600',
+    gap: SIMILAR_GRID_GAP,
   },
   loadingWrap: {
     flex: 1,
@@ -273,7 +199,7 @@ const styles = StyleSheet.create({
   unlockButton: {
     marginTop: Spacing.sm,
     backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.full,
+    borderRadius: 999,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
   },

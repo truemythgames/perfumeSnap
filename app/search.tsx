@@ -6,6 +6,7 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
+  Pressable,
   TextInput,
   Keyboard,
   Platform,
@@ -16,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection } from '../services/api';
+import { collectionPrefillKey, syncCollectionPrefillCache } from '../services/resultNavigationCache';
 
 const PHOTO_WIDTH = 90;
 const PHOTO_HEIGHT = PHOTO_WIDTH * 1.3;
@@ -75,8 +77,10 @@ export default function SearchScreen() {
   );
 
   useEffect(() => {
+    router.prefetch('/collection-detail');
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
+  useEffect(() => { syncCollectionPrefillCache(allItems); }, [allItems]);
 
   const filtered = query.trim()
     ? allItems.filter((item) => {
@@ -89,16 +93,18 @@ export default function SearchScreen() {
     : allItems;
 
   const openDetail = (item: CollectionItem) => {
-    if (item.perfume.imageUri) {
-      Image.prefetch(item.perfume.imageUri).catch(() => {});
-    }
+    const key = collectionPrefillKey(item.id);
     router.push({
-      pathname: '/result',
+      pathname: '/collection-detail',
       params: {
-        fromCollection: '1',
-        prefill: JSON.stringify(item.perfume),
+        prefillKey: key,
         ...(item.perfume.imageUri ? { imageUri: item.perfume.imageUri } : {}),
       },
+    });
+    queueMicrotask(() => {
+      if (item.perfume.imageUri) {
+        Image.prefetch(item.perfume.imageUri).catch(() => {});
+      }
     });
   };
 
@@ -106,9 +112,8 @@ export default function SearchScreen() {
     const p = item.perfume;
     const price = computePriceDisplay(item);
     return (
-      <TouchableOpacity
-        style={styles.card}
-        activeOpacity={0.85}
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
         onPress={() => openDetail(item)}
       >
         <View style={styles.photoOuter}>
@@ -146,7 +151,7 @@ export default function SearchScreen() {
             <Text style={styles.cardPrice}>{price}</Text>
           ) : null}
         </View>
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 

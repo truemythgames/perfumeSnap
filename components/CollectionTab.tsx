@@ -20,7 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, router } from 'expo-router';
+import { router } from 'expo-router';
 import Animated, {
   useAnimatedStyle,
   useAnimatedScrollHandler,
@@ -33,6 +33,7 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection, deleteFromCollection } from '../services/api';
+import { collectionPrefillKey, syncCollectionPrefillCache } from '../services/resultNavigationCache';
 import { trackDeleteFromCollection, trackEvent } from '../services/analytics';
 import { FREE_LIMITS, getPremiumStatus } from '../services/access';
 import { getPreferredCurrency, getCurrencyByCode } from '../services/currency';
@@ -542,6 +543,8 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   }, [nextCursor, loadingMore]);
 
   useEffect(() => { load(true); }, [load]);
+  useEffect(() => { router.prefetch('/collection-detail'); }, []);
+  useEffect(() => { syncCollectionPrefillCache(items); }, [items]);
   useEffect(() => { getPremiumStatus().then(setIsPremium); }, []);
   useEffect(() => {
     getPreferredCurrency().then((code) => {
@@ -549,8 +552,6 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       if (c) setCurrencySymbol(c.symbol);
     });
   }, []);
-
-  useFocusEffect(useCallback(() => { load(false); }, [load]));
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -829,20 +830,19 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
 
   const openCollectionDetail = useCallback((item: CollectionItem) => {
-    trackEvent('open_collection_item', {
-      perfume_name: item.perfume.name || '',
-      perfume_brand: item.perfume.brand || '',
-    });
-    if (item.perfume.imageUri) {
-      Image.prefetch(item.perfume.imageUri).catch(() => {});
-    }
+    const key = collectionPrefillKey(item.id);
     router.push({
-      pathname: '/result',
+      pathname: '/collection-detail',
       params: {
-        fromCollection: '1',
-        prefill: JSON.stringify(item.perfume),
+        prefillKey: key,
         ...(item.perfume.imageUri ? { imageUri: item.perfume.imageUri } : {}),
       },
+    });
+    queueMicrotask(() => {
+      trackEvent('open_collection_item', {
+        perfume_name: item.perfume.name || '',
+        perfume_brand: item.perfume.brand || '',
+      });
     });
   }, []);
 
@@ -858,9 +858,8 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     const p = item.perfume;
     const livePrice = computeLivePriceDisplay(item);
     return (
-      <TouchableOpacity
-        style={styles.card}
-        activeOpacity={0.85}
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && !editing && { opacity: 0.85 }]}
         onLongPress={() => handleRemove(item.id)}
         onPress={() => (editing ? toggleSelect(item.id) : openCollectionDetail(item))}
       >
@@ -909,7 +908,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           ) : null}
         </View>
 
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 

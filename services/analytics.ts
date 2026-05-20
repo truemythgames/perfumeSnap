@@ -27,19 +27,20 @@ export async function initFacebookSDK() {
 // ---------------------------------------------------------------------------
 
 export function trackEvent(name: string, params?: Record<string, string | number>) {
-  try {
-    if (params) {
-      AppEventsLogger.logEvent(name, params);
-    } else {
-      AppEventsLogger.logEvent(name);
+  // Never block UI thread: FB SDK batches events; flush() on every tap caused navigation lag.
+  queueMicrotask(() => {
+    try {
+      if (params) {
+        AppEventsLogger.logEvent(name, params);
+      } else {
+        AppEventsLogger.logEvent(name);
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('[FB Events] Failed to log event:', name, params, error);
+      }
     }
-    AppEventsLogger.flush();
-  } catch (error) {
-    // Surface FB SDK issues during development instead of silently swallowing them.
-    if (__DEV__) {
-      console.warn('[FB Events] Failed to log event:', name, params, error);
-    }
-  }
+  });
 }
 
 export function trackScreenView(screen: string) {

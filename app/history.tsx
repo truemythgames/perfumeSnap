@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
+  Pressable,
   Alert,
   Platform,
 } from 'react-native';
@@ -15,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { HistoryItem, getHistory, clearHistory } from '../services/history';
+import { historyPrefillKey, syncHistoryPrefillCache } from '../services/resultNavigationCache';
 
 const PHOTO_WIDTH = 90;
 const PHOTO_HEIGHT = PHOTO_WIDTH * 1.3;
@@ -29,6 +31,9 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => { router.prefetch('/collection-detail'); }, []);
+  useEffect(() => { syncHistoryPrefillCache(items); }, [items]);
 
   useFocusEffect(
     useCallback(() => {
@@ -63,19 +68,18 @@ export default function HistoryScreen() {
   };
 
   const openDetail = (item: HistoryItem) => {
-    if (item.imageUri) {
-      Image.prefetch(item.imageUri).catch(() => {});
-    }
+    const key = historyPrefillKey(item.id);
     router.push({
-      pathname: '/result',
+      pathname: '/collection-detail',
       params: {
         imageUri: item.imageUri || '',
-        fromCollection: '1',
-        prefill: JSON.stringify({
-          ...item.perfume,
-          imageUri: item.imageUri,
-        }),
+        prefillKey: key,
       },
+    });
+    queueMicrotask(() => {
+      if (item.imageUri) {
+        Image.prefetch(item.imageUri).catch(() => {});
+      }
     });
   };
 
@@ -83,9 +87,8 @@ export default function HistoryScreen() {
     const p = item.perfume;
     const price = getPriceDisplay(item);
     return (
-      <TouchableOpacity
-        style={styles.card}
-        activeOpacity={0.85}
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
         onPress={() => openDetail(item)}
       >
         <View style={styles.photoOuter}>
@@ -123,7 +126,7 @@ export default function HistoryScreen() {
             <Text style={styles.cardPrice}>{price}</Text>
           ) : null}
         </View>
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 

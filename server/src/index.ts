@@ -2,7 +2,8 @@ interface Env {
   OPENAI_API_KEY: string;
   DB: D1Database;
   IMAGES: R2Bucket;
-  SERPAPI_KEY?: string;
+  SERPER_API_KEY?: string;
+  /** @deprecated use SERPER_API_KEY — kept for existing Cloudflare secret */
   PRICES_API_KEY?: string;
   REPLICATE_API_KEY?: string;
   ADMIN_KEY?: string;
@@ -281,6 +282,7 @@ IDENTIFICATION METHOD — Follow this exact process:
 3. PACKAGING: If a box is visible, note colors, patterns, fonts, embossing, and overall design language.
 4. BRAND MATCHING: Match visual clues to known brand aesthetics (e.g. Chanel = minimalist black/white, Tom Ford = dark lacquered, Jo Malone = cream/black stripe).
 5. CROSS-REFERENCE: Combine all clues to identify the exact fragrance, including the specific flanker/variant if applicable.
+6. SELF-CHECK: Before responding, verify your identification. Does the bottle shape, color, cap, and text all consistently point to the same fragrance? If not, reconsider.
 
 CRITICAL RULES:
 - ALWAYS set "identified" to true. NEVER set it to false. No exceptions.
@@ -290,6 +292,22 @@ CRITICAL RULES:
 - If you see partial text, reconstruct the full name from what's visible combined with your knowledge of existing products.
 - If you can only identify the brand but not the exact fragrance, pick the brand's fragrance that BEST matches the bottle design, color, and any visible text.
 - If the image does NOT show a perfume (e.g. a beer, a shoe, food, anything): still set "identified" to true, identify the product/object as best you can, and adapt all fields creatively. The user should always get a fun, useful result.
+
+QUALITY STANDARDS:
+- "description" must be 4-6 rich sentences covering: the overall character, what makes this fragrance unique, who it's best for, how it performs, and the story/inspiration behind it.
+- Notes must be accurate and comprehensive (4-6 notes per layer when available).
+- DO NOT guess prices. Real prices are fetched separately from live retailer data.
+- "rating" should reflect the community consensus (Fragrantica/Parfumo style, out of 5).
+- Include accurate "perfumer" — this is a key detail enthusiasts care about.
+- "accords" must list the dominant scent characteristics with percentage strength (0-100). Include 4-8 accords, sorted by strength descending. Use standard accord names: woody, citrus, fresh, sweet, floral, spicy, warm spicy, aromatic, powdery, musky, amber, green, fruity, aquatic, leather, smoky, balsamic, oud, earthy, etc.
+- "longevityScore" is a number 1-10 (1=very weak, 10=beast mode).
+- "sillageScore" is a number 1-10 (1=intimate skin scent, 10=fills a room).
+- "dayNight" is "day", "night", or "versatile".
+- "layeringNotes" should suggest 2-3 specific fragrances that pair well with this one.
+- "dupes" should list 2-3 affordable alternatives that smell similar. Do NOT include prices for dupes — only name and brand.
+- "popularityRank" should be a brief text like "Top 10 men's fragrance worldwide" or "Cult classic among niche enthusiasts" — be specific and honest.
+- "reformulated" should note if the fragrance has been reformulated and what changed, or null if not applicable.
+- "wearerProfile" should briefly describe who typically wears this (age range, style, occasion type).
 
 Respond ONLY with valid JSON in this exact format (no markdown, no code fences):
 {
@@ -302,21 +320,30 @@ Respond ONLY with valid JSON in this exact format (no markdown, no code fences):
   "yearLaunched": "e.g. 2015",
   "perfumer": "Name of the nose/perfumer if known, or Unknown",
   "concentration": "e.g. Eau de Parfum, Eau de Toilette, Parfum, Extrait",
-  "topNotes": ["note1", "note2", "note3"],
-  "heartNotes": ["note1", "note2", "note3"],
-  "baseNotes": ["note1", "note2", "note3"],
-  "description": "A rich 2-3 sentence description of the fragrance profile and character",
-  "priceRange": "$80-$120",
-  "sizesPricing": [
-    { "size": "30ml", "price": "$50-$70" },
-    { "size": "50ml", "price": "$80-$120" },
-    { "size": "100ml", "price": "$120-$160" }
+  "topNotes": ["note1", "note2", "note3", "note4"],
+  "heartNotes": ["note1", "note2", "note3", "note4"],
+  "baseNotes": ["note1", "note2", "note3", "note4"],
+  "accords": [
+    { "name": "Woody", "strength": 85 },
+    { "name": "Spicy", "strength": 70 },
+    { "name": "Sweet", "strength": 45 }
   ],
+  "description": "A rich 4-6 sentence description covering character, uniqueness, target audience, performance, and backstory",
   "rating": 4.5,
   "longevity": "e.g. Long-lasting (8-10 hours)",
+  "longevityScore": 8,
   "sillage": "e.g. Moderate, Strong, Intimate",
-  "occasions": ["occasion1", "occasion2"],
-  "seasons": ["season1", "season2"]
+  "sillageScore": 7,
+  "dayNight": "versatile",
+  "occasions": ["occasion1", "occasion2", "occasion3"],
+  "seasons": ["season1", "season2"],
+  "layeringNotes": ["Specific fragrance 1 for layering", "Specific fragrance 2"],
+  "dupes": [
+    { "name": "Affordable Alternative Name", "brand": "Brand" }
+  ],
+  "popularityRank": "Brief popularity/status description",
+  "reformulated": "Description of reformulation changes, or null if not reformulated",
+  "wearerProfile": "e.g. Confident men 25-40 who want a signature evening scent"
 }
 
 IMPORTANT: Do NOT include a "similarPerfumes" field. Only return the fields shown above. Similar shopping results are fetched separately.
@@ -498,7 +525,7 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Read all visible text in this image carefully. Pay close attention to any words, logos, brand markings, product shape, and design details. Then identify the product.' },
+              { type: 'text', text: 'Read all visible text in this image carefully. Pay close attention to any words, logos, brand markings, product shape, and design details. Then identify the product. Provide rich, accurate, and comprehensive details.' },
               {
                 type: 'image_url',
                 image_url: {
@@ -509,8 +536,8 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
             ],
           },
         ],
-      max_tokens: 2000,
-      temperature: 0.3,
+      max_tokens: 3000,
+      temperature: 0.2,
     }),
   });
 
@@ -569,11 +596,11 @@ async function handleLookup(request: Request, env: Env): Promise<Response> {
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: `Provide detailed information about this perfume: "${query}". Respond with the same JSON format as if you had identified it from a photo.`,
+          content: `Provide detailed and comprehensive information about this perfume: "${query}". Include accurate current pricing, layering suggestions, affordable alternatives (dupes), and popularity status. Respond with the same JSON format as if you had identified it from a photo.`,
         },
       ],
-      max_tokens: 2000,
-        temperature: 0.3,
+      max_tokens: 3000,
+        temperature: 0.2,
       }),
     });
 
@@ -1048,13 +1075,86 @@ async function handleClearHistory(request: Request, env: Env): Promise<Response>
   return jsonResponse({ ok: true });
 }
 
-// ----------------------------- Similar Listings (SerpAPI) -----------------------------
+// ----------------------------- Similar Listings -----------------------------
+
+type ProductListingRow = {
+  name: string;
+  brand: string;
+  estimatedPrice: string;
+  retailer: string;
+  imageUrl: string | null;
+  productUrl: string | null;
+  condition: string | null;
+};
+
+type SerperShopRaw = {
+  title?: string;
+  price?: string;
+  source?: string;
+  thumbnail?: string;
+  imageUrl?: string;
+  link?: string;
+  source_link?: string;
+  vendor_link?: string;
+  product_link?: string;
+  condition?: string;
+};
+
+type SerperOrganicRaw = { title?: string; link?: string; displayed_link?: string };
+
+async function serperRequest(
+  endpoint: 'shopping' | 'search',
+  apiKey: string,
+  body: Record<string, string | number>,
+): Promise<Response> {
+  return fetch(`https://google.serper.dev/${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-KEY': apiKey,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function pickSerperProductLink(s: SerperShopRaw): string | undefined {
+  for (const candidate of [s.source_link, s.vendor_link, s.product_link, s.link]) {
+    if (!candidate) continue;
+    try {
+      const host = new URL(candidate).hostname.toLowerCase();
+      if (!host.includes('google.')) return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return s.link;
+}
+
+function mapSerperShoppingItems(items: SerperShopRaw[]): Array<{
+  title?: string;
+  price?: string;
+  source?: string;
+  thumbnail?: string;
+  condition?: string;
+  product_link?: string;
+  link?: string;
+}> {
+  return items.map((s) => ({
+    title: s.title,
+    price: s.price,
+    source: s.source,
+    thumbnail: s.thumbnail || s.imageUrl,
+    condition: s.condition,
+    product_link: pickSerperProductLink(s),
+    link: s.link,
+  }));
+}
 
 async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
-  if (!env.SERPAPI_KEY) {
-    return jsonResponse({ error: 'SerpAPI key not configured' }, 501);
+  const shoppingApiKey = env.SERPER_API_KEY || env.PRICES_API_KEY;
+  if (!shoppingApiKey) {
+    return jsonResponse({ error: 'Shopping API key not configured (set SERPER_API_KEY)' }, 501);
   }
-  const serpApiKey = env.SERPAPI_KEY;
 
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS similar_cache (
@@ -1073,7 +1173,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   const gl = /^[a-z]{2}$/.test(countryParam) ? countryParam : 'us';
   const hl = /^[a-z]{2}$/.test(hlParam) ? hlParam : 'en';
 
-  const cacheKey = `v5:${gl}:${hl}:${q.toLowerCase().trim()}`;
+  const cacheKey = `v10:serper:${gl}:${hl}:${q.toLowerCase().trim()}`;
   const noCache = url.searchParams.get('nocache') === '1';
 
   if (!noCache) {
@@ -1089,6 +1189,55 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   }
 
   const nameHint = url.searchParams.get('name')?.toLowerCase().trim() || '';
+  const brandHint = url.searchParams.get('brand')?.toLowerCase().trim() || '';
+
+  const JUNK_PATTERNS = /\b(sample|decant|vial|travel spray|atomizer|mini\b|rollerball|gift set|body lotion|body wash|shower gel|deodorant|after.?shave|body cream|hair mist|candle|tester)\b/i;
+  const STOP_WORDS = new Set(['perfume', 'parfum', 'fragrance', 'for', 'the', 'and', 'with', 'spray', 'eau', 'de', 'toilette', 'parfum', 'edp', 'edt']);
+  const CONCENTRATION_TOKENS = [
+    { token: 'elixir', aliases: ['elixir'] },
+    { token: 'parfum', aliases: ['parfum', 'extrait'] },
+    { token: 'edp', aliases: ['edp', 'eau de parfum'] },
+    { token: 'edt', aliases: ['edt', 'eau de toilette'] },
+    { token: 'cologne', aliases: ['cologne', 'eau de cologne'] },
+  ];
+
+  function normalizeText(v: string): string {
+    return v.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function toTokens(v: string): string[] {
+    return normalizeText(v).split(' ').filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+  }
+
+  function hasJunkProductWords(v: string): boolean {
+    return JUNK_PATTERNS.test(v);
+  }
+
+  const nameTokens = toTokens(nameHint);
+  const brandTokens = toTokens(brandHint);
+  const concentrationNeeded = CONCENTRATION_TOKENS.filter((c) =>
+    c.aliases.some((a) => nameHint.includes(a)),
+  );
+
+  function titleLooksRelevant(title: string): boolean {
+    const t = normalizeText(title);
+    if (!t) return false;
+    if (hasJunkProductWords(t)) return false;
+
+    if (brandTokens.length > 0 && !brandTokens.some((bt) => t.includes(bt))) return false;
+
+    if (nameTokens.length > 0) {
+      const hits = nameTokens.filter((nt) => t.includes(nt)).length;
+      const minHits = Math.max(1, Math.ceil(nameTokens.length * 0.6));
+      if (hits < minHits) return false;
+    }
+
+    for (const c of concentrationNeeded) {
+      if (!c.aliases.some((a) => t.includes(a))) return false;
+    }
+
+    return true;
+  }
 
   const organicQueries = [
     `${q} where to buy`,
@@ -1097,29 +1246,21 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     `${q} (site:walmart.com OR site:sephora.com OR site:ulta.com OR site:nordstrom.com OR site:macys.com OR site:fragrancenet.com)`,
   ];
 
-  // Parallel calls: shopping (images+prices) + multiple organic (direct URLs)
+  // Parallel calls: Serper shopping (images+prices) + organic search (direct retailer URLs)
   const [shoppingRes, ...organicResponses] = await Promise.all([
-    fetch(`https://serpapi.com/search.json?${new URLSearchParams({
-      engine: 'google_shopping', q, api_key: serpApiKey, num: '40', gl, hl,
-    })}`),
+    serperRequest('shopping', shoppingApiKey, { q, gl, hl, num: 40 }),
     ...organicQueries.map((oq) =>
-      fetch(`https://serpapi.com/search.json?${new URLSearchParams({
-        engine: 'google',
-        q: oq,
-        api_key: serpApiKey,
-        num: '40',
-        gl,
-        hl,
-      })}`),
+      serperRequest('search', shoppingApiKey, { q: oq, gl, hl, num: 40 }),
     ),
   ]);
 
   if (!shoppingRes.ok) {
-    return jsonResponse({ error: 'SerpAPI request failed' }, 502);
+    return jsonResponse({ error: 'Shopping search request failed' }, 502);
   }
 
   type ShopItem = { title?: string; price?: string; source?: string; thumbnail?: string; condition?: string; product_link?: string; link?: string };
-  const shoppingData = await shoppingRes.json<{ shopping_results?: ShopItem[] }>();
+  const shoppingPayload = await shoppingRes.json<{ shopping?: SerperShopRaw[]; shopping_results?: SerperShopRaw[] }>();
+  const shoppingData = { shopping_results: mapSerperShoppingItems(shoppingPayload.shopping || shoppingPayload.shopping_results || []) };
 
   if (url.searchParams.get('debug') === '1') {
     return jsonResponse({
@@ -1134,8 +1275,9 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   const organicSets = await Promise.all(
     organicResponses.map(async (res) => {
       if (!res.ok) return [] as OI[];
-      const data = await res.json<{ organic_results?: OI[] }>();
-      return data.organic_results || [];
+      const data = await res.json<{ organic?: SerperOrganicRaw[]; organic_results?: SerperOrganicRaw[] }>();
+      const rows = data.organic || data.organic_results || [];
+      return rows.map((o) => ({ title: o.title, link: o.link, displayed_link: o.displayed_link }));
     }),
   );
   const organicCandidates: OI[] = organicSets.flat();
@@ -1190,7 +1332,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     }
   }
 
-  type R = { name: string; brand: string; estimatedPrice: string; retailer: string; imageUrl: string | null; productUrl: string | null; condition: string | null };
+  type R = ProductListingRow;
   const queryWords = q.toLowerCase().split(/\s+/).filter((w) => w.length > 2 && w !== 'perfume' && w !== 'buy' && w !== 'online');
   const nameWords = nameHint.split(/\s+/).filter((w) => w.length > 2);
   const strongWords = nameWords.length > 0 ? nameWords : queryWords;
@@ -1218,30 +1360,18 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   }
 
   type PreparedShop = ShopItem & { _id: string; _hits: number; _titleText: string };
-  const preparedShopping: PreparedShop[] = (shoppingData.shopping_results || []).map((s, i) => {
-    const titleText = `${s.title || ''} ${s.source || ''}`.toLowerCase();
-    return {
-      ...s,
-      _id: `${i}:${s.title || ''}:${s.source || ''}`,
-      _hits: countTokenHits(titleText, strongWords),
-      _titleText: titleText,
-    };
-  });
+  const preparedShopping: PreparedShop[] = (shoppingData.shopping_results || [])
+    .filter((s) => Boolean(s.title) && titleLooksRelevant(s.title || ''))
+    .map((s, i) => {
+      const titleText = `${s.title || ''} ${s.source || ''}`.toLowerCase();
+      return {
+        ...s,
+        _id: `${i}:${s.title || ''}:${s.source || ''}`,
+        _hits: countTokenHits(titleText, strongWords),
+        _titleText: titleText,
+      };
+    });
 
-  const relevantShopping = preparedShopping.filter((s) => Boolean(s.thumbnail) && s._hits >= requiredTokenHits);
-  const bySourceKey = new Map<string, ShopItem[]>();
-  function isRelevantProductText(text: string): boolean {
-    return countTokenHits(text, strongWords) >= requiredTokenHits;
-  }
-
-  for (const s of shoppingData.shopping_results || []) {
-    const key = getSourceKey(s.source);
-    if (!key) continue;
-    if (!bySourceKey.has(key)) bySourceKey.set(key, []);
-    bySourceKey.get(key)!.push(s);
-  }
-
-  const usedSourceKeys = new Set<string>();
   const usedShoppingIds = new Set<string>();
   const seenUrls = new Set<string>();
   const domainCounts = new Map<string, number>();
@@ -1251,6 +1381,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   for (const item of organicCandidates) {
     const link = item.link || '';
     if (!link || isSkippedDomain(link)) continue;
+    if (!titleLooksRelevant(item.title || '')) continue;
 
     let domain = '';
     let domainKey = '';
@@ -1278,42 +1409,35 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
       .filter((m) => getSourceKey(m.source) === domainKey);
     let shopping = shoppingMatches.find((m) => !usedShoppingIds.has(m._id)) || shoppingMatches[0];
 
-    // If domain has no product image match, use best globally relevant product image.
-    if (!shopping) {
-      const organicText = `${item.title || ''} ${domain}`.toLowerCase();
-      const bestGlobal = relevantShopping
-        .filter((m) => !usedShoppingIds.has(m._id))
-        .map((m) => {
-          const overlap = countTokenHits(`${m._titleText} ${organicText}`, strongWords);
-          return { m, overlap };
-        })
-        .sort((a, b) => b.overlap - a.overlap)[0];
-      if (bestGlobal && bestGlobal.overlap >= domainRequiredHits) {
-        shopping = bestGlobal.m;
-      }
-    }
-
     if (shopping) {
-      usedSourceKeys.add(`${domainKey}:${shopping.title || ''}`);
       usedShoppingIds.add(shopping._id);
     }
 
-    seenUrls.add(link);
-    domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
+    const pairedUrl = shopping?.product_link || shopping?.link || link;
+    if (!isLikelyProductUrl(pairedUrl)) continue;
+    if (seenUrls.has(pairedUrl)) continue;
+
+    let pairedDomain = domain;
+    try {
+      pairedDomain = new URL(pairedUrl).hostname.replace('www.', '').toLowerCase();
+    } catch {}
+
+    seenUrls.add(pairedUrl);
+    domainCounts.set(pairedDomain, (domainCounts.get(pairedDomain) || 0) + 1);
     all.push({
       name: shopping?.title || item.title || '',
       brand: '',
       estimatedPrice: shopping?.price || '',
       retailer: normalizeRetailerName(shopping?.source, domain),
       imageUrl: shopping?.thumbnail || null,
-      productUrl: link,
+      productUrl: pairedUrl,
       condition: shopping?.condition || null,
       _score: scoreOrganicResult(item, queryWords) + (nameMatch ? 2 : 0) + (queryMatch ? 1 : 0) + (isMajor ? 2 : 0) + (shopping?.price ? 3 : 0) + (shopping?.thumbnail ? 2 : 0),
     });
   }
 
-  // Add shopping rows when SerpAPI gives non-Google direct links.
-  for (const s of shoppingData.shopping_results || []) {
+  // Add shopping rows with direct retailer links from shopping index.
+  for (const s of preparedShopping) {
     const candidate = s.product_link || s.link || '';
     if (!candidate || isSkippedDomain(candidate)) continue;
     if (!isLikelyProductUrl(candidate)) continue;
@@ -1346,11 +1470,47 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     });
   }
 
-  const results = all
-    .sort((a, b) => b._score - a._score)
+  const ranked = all.sort((a, b) => b._score - a._score);
+
+  const strict = ranked
+    .filter((r) => Boolean(r.productUrl) && Boolean(r.imageUrl) && Boolean((r.estimatedPrice || '').trim()))
+    .slice(0, 20);
+
+  const relaxed = ranked
     .filter((r) => Boolean(r.productUrl) && Boolean(r.imageUrl))
+    .slice(0, 20);
+
+  const fallbackFromShopping: Array<R & { _score: number }> = preparedShopping
+    .filter((s) => Boolean(s.thumbnail) && Boolean((s.price || '').trim()) && s._hits >= 1)
     .slice(0, 20)
-    .map(({ _score, ...row }) => row);
+    .map((s) => ({
+      name: s.title || q,
+      brand: '',
+      estimatedPrice: s.price || '',
+      retailer: normalizeRetailerName(s.source, ''),
+      imageUrl: s.thumbnail || null,
+      productUrl: s.product_link || s.link || `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(s.title || q)}`,
+      condition: s.condition || null,
+      _score: 6 + s._hits + (s.price ? 2 : 0) + (s.thumbnail ? 2 : 0),
+    }));
+
+  const merged: Array<R & { _score: number }> = [];
+  const seenProductUrls = new Set<string>();
+  const appendUnique = (rows: Array<R & { _score: number }>) => {
+    for (const row of rows) {
+      if (!row.productUrl) continue;
+      if (seenProductUrls.has(row.productUrl)) continue;
+      seenProductUrls.add(row.productUrl);
+      merged.push(row);
+      if (merged.length >= 20) break;
+    }
+  };
+
+  appendUnique(strict);
+  if (merged.length < 6) appendUnique(relaxed);
+  if (merged.length < 6) appendUnique(fallbackFromShopping);
+
+  const results = merged.map(({ _score, ...row }) => row);
 
   try {
     await env.DB.prepare(

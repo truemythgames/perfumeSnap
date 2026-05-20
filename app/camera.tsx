@@ -271,6 +271,7 @@ export default function CameraScreen() {
             <View style={[styles.corner, styles.bl]} />
             <View style={[styles.corner, styles.br]} />
           </View>
+          <View style={styles.focusCircle} />
           <Text style={styles.hintText}>Place the item in focus</Text>
         </View>
       </View>
@@ -510,6 +511,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: CORNER_WIDTH,
     borderRightWidth: CORNER_WIDTH,
     borderColor: 'rgba(255,255,255,0.5)',
+  },
+  focusCircle: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 39,
+    height: 39,
+    marginLeft: -19.5,
+    marginTop: -19.5,
+    borderRadius: 19.5,
+    backgroundColor: 'rgba(240,231,214,0.42)',
   },
 
   zoomRow: {
