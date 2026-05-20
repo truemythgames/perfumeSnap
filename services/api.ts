@@ -124,9 +124,14 @@ async function callIdentify(base64Image: string, mimeType: string, signal: Abort
   return response.json();
 }
 
-export async function identifyPerfume(base64Image: string, mimeType: string = 'image/jpeg'): Promise<PerfumeResult> {
+export async function identifyPerfume(base64Image: string, mimeType: string = 'image/jpeg', externalSignal?: AbortSignal): Promise<PerfumeResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90000);
+
+  if (externalSignal) {
+    if (externalSignal.aborted) { controller.abort(); }
+    else { externalSignal.addEventListener('abort', () => controller.abort(), { once: true }); }
+  }
 
   try {
     console.log('[PerfumeSnap] Sending request to:', `${API_URL}/identify`);
@@ -151,6 +156,7 @@ export async function identifyPerfume(base64Image: string, mimeType: string = 'i
     throw lastError || new Error('Identification failed after retries.');
   } catch (error: any) {
     if (error.name === 'AbortError') {
+      if (externalSignal?.aborted) throw new Error('Cancelled');
       throw new Error('Request timed out. The server took too long to respond.');
     }
     if (error.message?.includes('Network request failed')) {
@@ -165,9 +171,14 @@ export async function identifyPerfume(base64Image: string, mimeType: string = 'i
   }
 }
 
-export async function lookupPerfume(name: string, brand: string): Promise<PerfumeResult> {
+export async function lookupPerfume(name: string, brand: string, externalSignal?: AbortSignal): Promise<PerfumeResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
+
+  if (externalSignal) {
+    if (externalSignal.aborted) { controller.abort(); }
+    else { externalSignal.addEventListener('abort', () => controller.abort(), { once: true }); }
+  }
 
   try {
     const res = await fetch(`${API_URL}/lookup`, {
@@ -185,11 +196,25 @@ export async function lookupPerfume(name: string, brand: string): Promise<Perfum
     return res.json();
   } catch (error: any) {
     if (error.name === 'AbortError') {
+      if (externalSignal?.aborted) throw new Error('Cancelled');
       throw new Error('Request timed out.');
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export async function submitFeedback(perfumeName: string, perfumeBrand: string, satisfied: boolean): Promise<void> {
+  try {
+    const userId = await getOrCreateUserId();
+    await fetch(`${API_URL}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+      body: JSON.stringify({ perfumeName, perfumeBrand, satisfied }),
+    });
+  } catch {
+    // Best-effort — don't block UX on feedback failure
   }
 }
 

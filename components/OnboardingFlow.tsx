@@ -47,20 +47,20 @@ const PRIVACY_URL = 'https://perfumesnap.app/privacy';
 const WELCOME_HOLD_MS = 0;
 const PHOTO_SETTLE_BEFORE_FRAME_MS = 220;
 const WELCOME_FRAME_FADE_MS = 1800;
-const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS + 1000;
+const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS + 500;
 const FINAL_IMAGE_START_Y = 210;
 const IMAGE_TRANSITION_MS = 1200;
 const TOP_SECTION_HEIGHT = SCREEN_HEIGHT * 0.54;
 const PHOTO_FRAME_HEIGHT = SCREEN_WIDTH * 0.82;
 const SHINE_SWEEP_HEIGHT = SCREEN_HEIGHT * 0.5;
-const EASY_TO_VALUATION_DELAY_MS = 8000;
+const EASY_TO_VALUATION_DELAY_MS = 7000;
 const VALUATION_TARGET_PRICE = 560;
 const CONFETTI_BURST_DURATION_MS = 1500;
 const CONFETTI_FADE_OUT_MS = 320;
 const VALUATION_COUNT_STEPS = 40;
 const VALUATION_COUNT_INTERVAL_MS = 50;
 const VALUATION_COUNT_DURATION_MS = VALUATION_COUNT_STEPS * VALUATION_COUNT_INTERVAL_MS;
-const VALUATION_TO_COLLECTION_DELAY_MS = VALUATION_COUNT_DURATION_MS + CONFETTI_BURST_DURATION_MS + 250;
+const VALUATION_TO_COLLECTION_DELAY_MS = VALUATION_COUNT_DURATION_MS + CONFETTI_BURST_DURATION_MS + 650;
 const COLLECTION_TO_RATE_DELAY_MS = 4000;
 const COLLECTION_FRAME_TARGET_SCALE = 0.45;
 const COLLECTION_FRAME_BASE_WIDTH = SCREEN_WIDTH * 0.62;
@@ -597,6 +597,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const player = useVideoPlayer(ONBOARDING_VIDEO, (p) => {
     p.loop = false;
     p.volume = 0;
+    p.playbackRate = 1.25;
   });
 
   const loadingPlayer = useVideoPlayer(LOADING_VIDEO, (p) => {
@@ -1234,7 +1235,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const isPostWelcomePhase = step >= 4;
   const isEasyPhotoPhase = step === 4;
   const isValuationPhase = step === 5;
-  const isCollectionPhase = step === 6;
+  const isCollectionPhase = step === 6 || step === 7;
   const isRatePhase = step === 7;
 
   return (
@@ -1482,7 +1483,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       />
 
       {/* ── Step 7: Rate Us ── */}
-      {isRatePhase && (
+      {(isRatePhase || step === 8) && (
         <Animated.View
           style={[st.layer, st.rateUsOverlay, rateUsFade, { paddingBottom: insets.bottom + Spacing.lg }]}
           pointerEvents={isRatePhase ? 'auto' : 'none'}
@@ -1496,7 +1497,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
               ))}
             </View>
             <Animated.View style={stepTitleStyle}>
-              <Text style={st.rateUsTitle}>Love PerfumeSnap?</Text>
+              <Text style={st.rateUsTitle}>Help Us Grow</Text>
             </Animated.View>
             <Animated.View style={stepSubtitleStyle}>
               <Text style={st.rateUsSubtitle}>
@@ -1518,7 +1519,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       )}
 
       {/* ── Step 8: Personalization Loading ── */}
-      {step === 8 && (
+      {(step === 7 || step === 8) && (
         <Animated.View
           style={[st.layer, st.loadingOverlay, loadingFade, { paddingBottom: insets.bottom + Spacing.lg }]}
           pointerEvents={step === 8 ? 'auto' : 'none'}

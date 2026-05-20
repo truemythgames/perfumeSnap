@@ -5,6 +5,7 @@ interface Env {
   SERPAPI_KEY?: string;
   PRICES_API_KEY?: string;
   REPLICATE_API_KEY?: string;
+  ADMIN_KEY?: string;
 }
 
 // ----------------------------- Articles Data -----------------------------
@@ -442,6 +443,16 @@ export default {
 
       if (url.pathname === '/articles/generate-images' && request.method === 'POST') {
         return await handleGenerateArticleImages(request, env);
+      }
+
+      // ---- Feedback ----
+      if (url.pathname === '/feedback' && request.method === 'POST') {
+        return await handleSubmitFeedback(request, env);
+      }
+
+      // ---- Admin routes (password-protected) ----
+      if (url.pathname.startsWith('/admin')) {
+        return await handleAdmin(request, url, env);
       }
 
     return jsonResponse({ error: 'Not found' }, 404);
@@ -1475,3 +1486,334 @@ function buildImagePrompt(article: Article): string {
   };
   return prompts[article.slug] || `Luxury perfume editorial photo for an article about "${article.title}", warm golden tones, sophisticated, 4k product photography`;
 }
+
+// ----------------------------- Feedback -----------------------------
+
+async function handleSubmitFeedback(request: Request, env: Env): Promise<Response> {
+  const userId = request.headers.get('X-User-Id');
+  if (!isValidUserId(userId)) {
+    return jsonResponse({ error: 'Missing or invalid X-User-Id' }, 400);
+  }
+
+  const body = await request.json<{
+    perfumeName?: string;
+    perfumeBrand?: string;
+    satisfied?: boolean;
+  }>();
+
+  if (typeof body.satisfied !== 'boolean' || !body.perfumeName) {
+    return jsonResponse({ error: 'Missing required fields' }, 400);
+  }
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      perfume_name TEXT NOT NULL,
+      perfume_brand TEXT NOT NULL,
+      satisfied INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `).run();
+
+  await env.DB.prepare(
+    'INSERT INTO feedback (user_id, perfume_name, perfume_brand, satisfied, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(userId, body.perfumeName, body.perfumeBrand || '', body.satisfied ? 1 : 0, Date.now()).run();
+
+  return jsonResponse({ ok: true });
+}
+
+// ----------------------------- Admin ---------------------------------
+
+function checkAdmin(request: Request, env: Env): Response | null {
+  const key = env.ADMIN_KEY;
+  if (!key) return jsonResponse({ error: 'Admin not configured' }, 503);
+
+  const url = new URL(request.url);
+  const provided = url.searchParams.get('key') || request.headers.get('X-Admin-Key');
+  if (provided !== key) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+  return null;
+}
+
+async function handleAdmin(request: Request, url: URL, env: Env): Promise<Response> {
+  // The dashboard page itself — serves HTML, key checked inside the page via JS
+  if (url.pathname === '/admin' && request.method === 'GET') {
+    const authErr = checkAdmin(request, env);
+    if (authErr) return authErr;
+    return new Response(ADMIN_HTML, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
+    });
+  }
+
+  // ---- API routes (all require key) ----
+  const authErr = checkAdmin(request, env);
+  if (authErr) return authErr;
+
+  if (url.pathname === '/admin/feedback' && request.method === 'GET') {
+    return await handleAdminFeedback(url, env);
+  }
+
+  if (url.pathname === '/admin/feedback/stats' && request.method === 'GET') {
+    return await handleAdminFeedbackStats(env);
+  }
+
+  if (url.pathname === '/admin/images' && request.method === 'GET') {
+    return await handleAdminImages(url, env, request);
+  }
+
+  return jsonResponse({ error: 'Not found' }, 404);
+}
+
+async function handleAdminFeedback(url: URL, env: Env): Promise<Response> {
+  const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200);
+  const offset = Number(url.searchParams.get('offset')) || 0;
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      perfume_name TEXT NOT NULL,
+      perfume_brand TEXT NOT NULL,
+      satisfied INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `).run();
+
+  const rows = await env.DB.prepare(
+    'SELECT id, user_id, perfume_name, perfume_brand, satisfied, created_at FROM feedback ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  ).bind(limit, offset).all();
+
+  return jsonResponse({ items: rows.results, count: rows.results.length });
+}
+
+async function handleAdminFeedbackStats(env: Env): Promise<Response> {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      perfume_name TEXT NOT NULL,
+      perfume_brand TEXT NOT NULL,
+      satisfied INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `).run();
+
+  const total = await env.DB.prepare('SELECT COUNT(*) as c FROM feedback').first<{ c: number }>();
+  const yes = await env.DB.prepare('SELECT COUNT(*) as c FROM feedback WHERE satisfied = 1').first<{ c: number }>();
+  const no = await env.DB.prepare('SELECT COUNT(*) as c FROM feedback WHERE satisfied = 0').first<{ c: number }>();
+
+  const topPerfumes = await env.DB.prepare(`
+    SELECT perfume_brand, perfume_name,
+           COUNT(*) as total,
+           SUM(CASE WHEN satisfied = 1 THEN 1 ELSE 0 END) as positive,
+           SUM(CASE WHEN satisfied = 0 THEN 1 ELSE 0 END) as negative
+    FROM feedback
+    GROUP BY perfume_brand, perfume_name
+    ORDER BY total DESC
+    LIMIT 20
+  `).all();
+
+  return jsonResponse({
+    total: total?.c ?? 0,
+    positive: yes?.c ?? 0,
+    negative: no?.c ?? 0,
+    byPerfume: topPerfumes.results,
+  });
+}
+
+async function handleAdminImages(url: URL, env: Env, request: Request): Promise<Response> {
+  const cursor = url.searchParams.get('cursor') || undefined;
+  const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200);
+
+  const listed = await env.IMAGES.list({ limit, cursor });
+
+  const items = listed.objects.map((obj) => ({
+    key: obj.key,
+    size: obj.size,
+    uploaded: obj.uploaded.toISOString(),
+    url: publicImageUrl(request, obj.key),
+    contentType: obj.httpMetadata?.contentType || null,
+  }));
+
+  return jsonResponse({
+    items,
+    cursor: listed.truncated ? listed.cursor : null,
+    truncated: listed.truncated,
+  });
+}
+
+// ----------------------------- Admin Dashboard HTML --------------------
+
+const ADMIN_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PerfumeSnap Admin</title>
+<style>
+  :root { --bg: #0f0d0a; --card: #1a1710; --border: #2a2418; --gold: #c8943c; --gold-dim: #8a6e30; --text: #f5ead4; --text2: #a89878; --green: #5a9a5a; --red: #c44; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--gold); }
+  .header .badge { font-size: 11px; background: var(--gold-dim); color: var(--text); padding: 3px 10px; border-radius: 99px; font-weight: 600; }
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 32px; }
+  .tab { padding: 14px 24px; font-size: 14px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .content { padding: 32px; max-width: 1200px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .stat-card .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .stat-card .value { font-size: 32px; font-weight: 800; color: var(--gold); }
+  .stat-card .sub { font-size: 13px; color: var(--text2); margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); border-bottom: 1px solid var(--border); }
+  td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: rgba(200,148,60,0.04); }
+  .badge-yes { color: var(--green); font-weight: 600; }
+  .badge-no { color: var(--red); font-weight: 600; }
+  .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+  .img-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: pointer; transition: border-color 0.2s; }
+  .img-card:hover { border-color: var(--gold-dim); }
+  .img-card img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #111; }
+  .img-card .img-info { padding: 10px 12px; }
+  .img-card .img-key { font-size: 11px; color: var(--text2); word-break: break-all; }
+  .img-card .img-date { font-size: 10px; color: var(--text2); margin-top: 4px; }
+  .load-more { display: block; margin: 24px auto; padding: 12px 32px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--gold); font-weight: 600; cursor: pointer; font-size: 14px; }
+  .load-more:hover { border-color: var(--gold-dim); }
+  .empty { text-align: center; padding: 60px 20px; color: var(--text2); font-size: 15px; }
+  .section-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+  .copy-toast { position: fixed; bottom: 24px; right: 24px; background: var(--gold); color: #000; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .copy-toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>PerfumeSnap</h1>
+  <span class="badge">Admin</span>
+</div>
+<div class="tabs">
+  <div class="tab active" data-tab="feedback">Feedback</div>
+  <div class="tab" data-tab="images">Images</div>
+</div>
+<div class="content" id="content"></div>
+<div class="copy-toast" id="toast">Copied!</div>
+
+<script>
+const BASE = location.origin;
+const KEY = new URLSearchParams(location.search).get('key') || '';
+const api = (path) => fetch(BASE + path + (path.includes('?') ? '&' : '?') + 'key=' + KEY).then(r => r.json());
+
+let currentTab = 'feedback';
+let imageCursor = null;
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    currentTab = t.dataset.tab;
+    imageCursor = null;
+    load();
+  });
+});
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function timeAgo(ts) {
+  const d = Date.now() - ts;
+  if (d < 60000) return 'just now';
+  if (d < 3600000) return Math.floor(d/60000) + 'm ago';
+  if (d < 86400000) return Math.floor(d/3600000) + 'h ago';
+  return Math.floor(d/86400000) + 'd ago';
+}
+
+async function loadFeedback() {
+  const [stats, list] = await Promise.all([api('/admin/feedback/stats'), api('/admin/feedback?limit=100')]);
+  const pct = stats.total > 0 ? Math.round(stats.positive / stats.total * 100) : 0;
+
+  let html = '<div class="stats-grid">';
+  html += '<div class="stat-card"><div class="label">Total Responses</div><div class="value">' + stats.total + '</div></div>';
+  html += '<div class="stat-card"><div class="label">Satisfied</div><div class="value badge-yes">' + stats.positive + '</div><div class="sub">' + pct + '% positive</div></div>';
+  html += '<div class="stat-card"><div class="label">Unsatisfied</div><div class="value badge-no">' + stats.negative + '</div></div>';
+  html += '</div>';
+
+  if (stats.byPerfume && stats.byPerfume.length > 0) {
+    html += '<div class="section-title">By Perfume</div>';
+    html += '<table><tr><th>Perfume</th><th>Total</th><th>Positive</th><th>Negative</th></tr>';
+    stats.byPerfume.forEach(p => {
+      html += '<tr><td>' + p.perfume_brand + ' ' + p.perfume_name + '</td><td>' + p.total + '</td><td class="badge-yes">' + p.positive + '</td><td class="badge-no">' + p.negative + '</td></tr>';
+    });
+    html += '</table><br><br>';
+  }
+
+  html += '<div class="section-title">Recent Feedback</div>';
+  if (!list.items || list.items.length === 0) {
+    html += '<div class="empty">No feedback yet</div>';
+  } else {
+    html += '<table><tr><th>Time</th><th>Perfume</th><th>Result</th></tr>';
+    list.items.forEach(f => {
+      html += '<tr><td>' + timeAgo(f.created_at) + '</td><td>' + f.perfume_brand + ' ' + f.perfume_name + '</td><td class="' + (f.satisfied ? 'badge-yes' : 'badge-no') + '">' + (f.satisfied ? 'Satisfied' : 'Unsatisfied') + '</td></tr>';
+    });
+    html += '</table>';
+  }
+  document.getElementById('content').innerHTML = html;
+}
+
+async function loadImages(append) {
+  const params = 'limit=50' + (imageCursor ? '&cursor=' + encodeURIComponent(imageCursor) : '');
+  const data = await api('/admin/images?' + params);
+
+  let html = append ? document.getElementById('content').innerHTML.replace(/<button class="load-more".*?<\\/button>/, '') : '';
+
+  if (!append) {
+    html += '<div class="section-title">R2 Images (' + (data.items?.length || 0) + (data.truncated ? '+' : '') + ')</div>';
+  }
+
+  if (!data.items || data.items.length === 0) {
+    html += '<div class="empty">No images found</div>';
+  } else {
+    if (!append) html += '<div class="img-grid" id="img-grid">';
+    const cards = data.items.map(img => {
+      const isImage = (img.contentType || '').startsWith('image/');
+      return '<div class="img-card" onclick="copyUrl(\\'' + img.url.replace(/'/g, "\\\\'") + '\\')">'
+        + (isImage ? '<img src="' + img.url + '" loading="lazy" alt="">' : '<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#111;color:#555;font-size:12px;">No preview</div>')
+        + '<div class="img-info"><div class="img-key">' + img.key + '</div><div class="img-date">' + new Date(img.uploaded).toLocaleDateString() + ' &middot; ' + (img.size/1024).toFixed(0) + ' KB</div></div></div>';
+    }).join('');
+
+    if (append) {
+      html = html.replace(/<\\/div>\\s*$/, cards + '</div>');
+    } else {
+      html += cards + '</div>';
+    }
+  }
+
+  imageCursor = data.cursor;
+  if (data.truncated && data.cursor) {
+    html += '<button class="load-more" onclick="loadImages(true)">Load More</button>';
+  }
+
+  document.getElementById('content').innerHTML = html;
+}
+
+function copyUrl(url) {
+  navigator.clipboard.writeText(url).then(() => showToast('Image URL copied!'));
+}
+
+function load() {
+  if (currentTab === 'feedback') loadFeedback();
+  else loadImages(false);
+}
+
+load();
+</script>
+</body>
+</html>`;
+

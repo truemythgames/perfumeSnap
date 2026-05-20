@@ -105,3 +105,11 @@ export function trackCameraOpened() {
 export function trackTabSwitch(tab: string) {
   trackEvent('tab_switch', { tab });
 }
+
+export function trackResultFeedback(satisfied: boolean, perfumeName: string, perfumeBrand: string) {
+  trackEvent('result_feedback', {
+    satisfied: satisfied ? 'yes' : 'no',
+    perfume_name: perfumeName,
+    perfume_brand: perfumeBrand,
+  });
+}

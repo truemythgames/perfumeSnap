@@ -37,7 +37,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
 import { getPickedImageBase64, clearPickedImageBase64 } from '../services/imageTransfer';
-import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings } from '../services/api';
+import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, buildShoppingUrl, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings, submitFeedback } from '../services/api';
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
@@ -52,6 +52,7 @@ import {
   trackSaveToCollection,
   trackViewSimilar,
   trackChatOpened,
+  trackResultFeedback,
 } from '../services/analytics';
 import { canAddToCollection, FREE_LIMITS, getPremiumStatus } from '../services/access';
 import { addToHistory } from '../services/history';
@@ -413,6 +414,7 @@ export default function ResultScreen() {
   const [similarResolvedOnProcess, setSimilarResolvedOnProcess] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
   const [premiumStatusChecked, setPremiumStatusChecked] = useState(false);
+  const [resultFeedback, setResultFeedback] = useState<'yes' | 'no' | null>(null);
 
   useEffect(() => {
     getPremiumStatus()
@@ -761,6 +763,7 @@ export default function ResultScreen() {
     error?: string;
   } | null>(null);
   const stepInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const readAsBase64 = async (uri: string): Promise<{ base64: string; mimeType: string }> => {
     const response = await fetch(uri);
@@ -831,6 +834,9 @@ export default function ResultScreen() {
 
   const identify = useCallback(async () => {
     if (!imageUri) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     trackIdentifyStarted();
     setError(null);
     setLoading(true);
@@ -855,19 +861,25 @@ export default function ResultScreen() {
         mimeType = result.mimeType;
         console.log('[PerfumeSnap] Read from URI, mime:', mimeType, 'size:', Math.round(base64.length / 1024), 'KB');
       }
-      const perfume = await identifyPerfume(base64, mimeType);
+      const perfume = await identifyPerfume(base64, mimeType, controller.signal);
+      if (controller.signal.aborted) return;
       let listings: SimilarPerfume[] = [];
       try {
         listings = await getSimilarListings(perfume.name, perfume.brand);
       } catch {}
+      if (controller.signal.aborted) return;
       apiResult.current = { perfume, similarListings: listings, similarResolved: true };
     } catch (err: any) {
+      if (controller.signal.aborted) return;
       showError(err.message);
     }
   }, [imageUri, showError, startStepAnimation]);
 
   const doLookup = useCallback(async () => {
     if (!lookupName) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     trackLookupStarted(lookupName);
     setError(null);
     setLoading(true);
@@ -878,13 +890,16 @@ export default function ResultScreen() {
     startStepAnimation();
 
     try {
-      const perfume = await lookupPerfume(lookupName, lookupBrand || '');
+      const perfume = await lookupPerfume(lookupName, lookupBrand || '', controller.signal);
+      if (controller.signal.aborted) return;
       let listings: SimilarPerfume[] = [];
       try {
         listings = await getSimilarListings(perfume.name, perfume.brand);
       } catch {}
+      if (controller.signal.aborted) return;
       apiResult.current = { perfume, similarListings: listings, similarResolved: true };
     } catch (err: any) {
+      if (controller.signal.aborted) return;
       showError(err.message);
     }
   }, [lookupName, lookupBrand, showError, startStepAnimation]);
@@ -894,12 +909,16 @@ export default function ResultScreen() {
     if (collectionPerfume) return;
     if (isLookupMode) {
       doLookup();
-      return () => { if (stepInterval.current) clearInterval(stepInterval.current); };
+      return () => {
+        if (stepInterval.current) clearInterval(stepInterval.current);
+        abortRef.current?.abort();
+      };
     }
     if (!imageUri) return;
     identify();
     return () => {
       if (stepInterval.current) clearInterval(stepInterval.current);
+      abortRef.current?.abort();
     };
   }, [imageUri, collectionPerfume, identify, isLookupMode, doLookup]);
 
@@ -1376,6 +1395,75 @@ export default function ResultScreen() {
               </View>
             ) : null}
 
+            <View style={styles.feedbackCard}>
+              <Text style={styles.feedbackQuestion}>
+                Are you satisfied with the result?
+              </Text>
+              <View style={styles.feedbackRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.feedbackButton,
+                    resultFeedback === 'yes' && styles.feedbackButtonActive,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (resultFeedback) return;
+                    setResultFeedback('yes');
+                    trackResultFeedback(true, result.name, result.brand);
+                    submitFeedback(result.name, result.brand, true);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  disabled={resultFeedback !== null}
+                >
+                  <Ionicons
+                    name="thumbs-up-outline"
+                    size={16}
+                    color={resultFeedback === 'yes' ? Colors.primary : Colors.text}
+                  />
+                  <Text
+                    style={[
+                      styles.feedbackButtonText,
+                      resultFeedback === 'yes' && styles.feedbackButtonTextActive,
+                    ]}
+                  >
+                    Yes
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.feedbackButton,
+                    resultFeedback === 'no' && styles.feedbackButtonActive,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (resultFeedback) return;
+                    setResultFeedback('no');
+                    trackResultFeedback(false, result.name, result.brand);
+                    submitFeedback(result.name, result.brand, false);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  disabled={resultFeedback !== null}
+                >
+                  <Ionicons
+                    name="thumbs-down-outline"
+                    size={16}
+                    color={resultFeedback === 'no' ? '#c44' : Colors.text}
+                  />
+                  <Text
+                    style={[
+                      styles.feedbackButtonText,
+                      resultFeedback === 'no' && styles.feedbackButtonTextActive,
+                    ]}
+                  >
+                    No
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {resultFeedback && (
+                <Text style={styles.feedbackThanks}>Thanks for your feedback!</Text>
+              )}
+            </View>
+
             <View style={{ height: 100 }} />
           </Animated.View>
         </ScrollView>
@@ -1539,12 +1627,16 @@ export default function ResultScreen() {
         <View style={styles.accentLineBot} />
       </Animated.View>
 
-      {/* Close button */}
+      {/* Close / cancel button */}
       <TouchableOpacity
         style={[styles.processingClose, { top: insets.top + Spacing.sm }]}
-        onPress={() => router.replace('/camera')}
+        onPress={() => {
+          abortRef.current?.abort();
+          if (stepInterval.current) clearInterval(stepInterval.current);
+          router.replace('/camera');
+        }}
         activeOpacity={0.7}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
       >
         <Ionicons name="close" size={26} color="#fff" />
       </TouchableOpacity>
@@ -1679,10 +1771,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.lg,
     zIndex: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2129,6 +2223,58 @@ const styles = StyleSheet.create({
   priceCardGrading: {
     fontSize: FontSizes.md,
     color: '#5a4a32',
+    fontWeight: '500',
+  },
+  feedbackCard: {
+    marginTop: Spacing.lg,
+    marginHorizontal: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+  },
+  feedbackQuestion: {
+    fontSize: FontSizes.md,
+    fontWeight: '600',
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+    lineHeight: 22,
+  },
+  feedbackRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  feedbackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceLight,
+  },
+  feedbackButtonActive: {
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(200,148,60,0.1)',
+  },
+  feedbackButtonText: {
+    fontSize: FontSizes.md,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  feedbackButtonTextActive: {
+    color: Colors.primary,
+  },
+  feedbackThanks: {
+    marginTop: Spacing.sm + 2,
+    fontSize: FontSizes.sm,
+    color: Colors.textSecondary,
     fontWeight: '500',
   },
   priceCardGradingValue: {
