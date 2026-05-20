@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -24,9 +24,11 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import HomeTab from '../components/HomeTab';
 import CollectionTab, { CollectionTabHandle } from '../components/CollectionTab';
+import ScanCoachmark, { type CoachmarkAnchor } from '../components/ScanCoachmark';
 import { Colors, Spacing, FontSizes } from '../constants/theme';
 import { trackCameraOpened, trackTabSwitch } from '../services/analytics';
 import { FREE_LIMITS, getScanAllowance } from '../services/access';
+import { hasSeenScanCoachmark, markScanCoachmarkSeen } from '../services/coachmark';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAMERA_BTN_SIZE = 70;
@@ -40,8 +42,38 @@ export default function MainScreen() {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [editState, setEditState] = useState({ editing: false, selectedCount: 0 });
   const collectionRef = useRef<CollectionTabHandle>(null);
+  const cameraAnchorRef = useRef<View>(null);
   const translateX = useSharedValue(-initialTab * SCREEN_WIDTH);
   const insets = useSafeAreaInsets();
+  const [showScanCoachmark, setShowScanCoachmark] = useState(false);
+  const [coachmarkAnchor, setCoachmarkAnchor] = useState<CoachmarkAnchor | null>(null);
+
+  useEffect(() => {
+    hasSeenScanCoachmark().then((seen) => {
+      if (!seen) setShowScanCoachmark(true);
+    });
+  }, []);
+
+  const measureCameraAnchor = useCallback(() => {
+    cameraAnchorRef.current?.measureInWindow((x, y, width, height) => {
+      setCoachmarkAnchor({ x, y, width, height });
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showScanCoachmark) return;
+    const t1 = setTimeout(measureCameraAnchor, 80);
+    const t2 = setTimeout(measureCameraAnchor, 400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [showScanCoachmark, measureCameraAnchor, activeTab, insets.bottom]);
+
+  const dismissScanCoachmark = useCallback(() => {
+    setShowScanCoachmark(false);
+    void markScanCoachmarkSeen();
+  }, []);
 
   const handleEditStateChange = useCallback(
     (state: { editing: boolean; selectedCount: number }) => setEditState(state),
@@ -118,6 +150,7 @@ export default function MainScreen() {
   }));
 
   const handleCamera = async () => {
+    if (showScanCoachmark) dismissScanCoachmark();
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const allowance = await getScanAllowance();
     if (!allowance.allowed) {
@@ -165,7 +198,16 @@ export default function MainScreen() {
         </TouchableOpacity>
 
         <View style={styles.cameraNotch}>
-          <View style={styles.cameraButtonWrapper}>
+          <View
+            ref={cameraAnchorRef}
+            style={[
+              styles.cameraButtonWrapper,
+              showScanCoachmark && styles.cameraButtonAboveCoachmark,
+            ]}
+            onLayout={() => {
+              if (showScanCoachmark) measureCameraAnchor();
+            }}
+          >
             <TouchableOpacity
               onPress={handleCamera}
               activeOpacity={0.8}
@@ -233,6 +275,12 @@ export default function MainScreen() {
           </TouchableOpacity>
         </View>
       </Animated.View>
+
+      <ScanCoachmark
+        visible={showScanCoachmark && activeTab === 0}
+        anchor={coachmarkAnchor}
+        onDismiss={dismissScanCoachmark}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -303,6 +351,12 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
       },
       android: { elevation: 8 },
+    }),
+  },
+  cameraButtonAboveCoachmark: {
+    zIndex: 210,
+    ...Platform.select({
+      android: { elevation: 210 },
     }),
   },
   cameraButton: {

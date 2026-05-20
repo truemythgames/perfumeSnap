@@ -172,7 +172,7 @@ export default function CameraScreen() {
         router.replace({
           pathname: '/result',
           params: { imageUri: manipulated.uri },
-        });
+        }, { animation: 'none' });
       }
     } catch (err) {
       console.error('Failed to take picture:', err);
@@ -226,7 +226,7 @@ export default function CameraScreen() {
     router.replace({
       pathname: '/result',
       params: { imageUri: manipulated.uri },
-    });
+    }, { animation: 'none' });
   };
 
   const adjustZoom = (delta: number) => {

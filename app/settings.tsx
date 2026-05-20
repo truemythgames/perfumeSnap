@@ -15,9 +15,9 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { deleteAccount } from '../services/api';
+import { clearAllLocalUserData } from '../services/localReset';
 import { isPremiumUser, restorePurchases } from '../services/subscription';
 import { CURRENCIES, getPreferredCurrency, setPreferredCurrency, getCurrencyByCode, CurrencyOption } from '../services/currency';
 
@@ -116,10 +116,11 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await deleteAccount();
-              await SecureStore.deleteItemAsync('perfumesnap_user_id');
-              Alert.alert('Done', 'Your account and all data have been deleted.', [
-                { text: 'OK', onPress: () => router.replace('/') },
-              ]);
+              await clearAllLocalUserData();
+              Alert.alert(
+                'Done',
+                'Your account and all data have been deleted. You can set up PerfumeSnap again from scratch.',
+              );
             } catch (err: any) {
               Alert.alert('Error', err?.message || 'Failed to delete account. Please try again.');
             }

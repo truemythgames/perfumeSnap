@@ -16,6 +16,10 @@ export function getResultPrefill(key: string): ResultPrefillPayload | null {
   return cache.get(key) ?? null;
 }
 
+export function clearResultPrefillCache(): void {
+  cache.clear();
+}
+
 export function collectionPrefillKey(id: string): string {
   return `col:${id}`;
 }

@@ -12,11 +12,10 @@ import analytics from '@react-native-firebase/analytics';
 import { initRevenueCat, isPremiumUser } from '../services/subscription';
 import { getOrCreateUserId } from '../services/user';
 import { isPaywallDismissedForSession, dismissPaywallForSession } from '../services/paywall';
+import { ONBOARDING_KEY, subscribeToLocalAccountReset } from '../services/localReset';
 import OnboardingFlow from '../components/OnboardingFlow';
 
 SplashScreen.preventAutoHideAsync();
-
-const ONBOARDING_KEY = 'perfumesnap_onboarding_done';
 
 /** Native iOS edge swipe-back; fullScreenGesture off so vertical scroll is not stolen. */
 const NATIVE_PUSH_SCREEN_OPTIONS = {
@@ -74,6 +73,14 @@ export default function RootLayout() {
       })
       .catch(() => setOnboardingDone(false))
       .finally(() => SplashScreen.hideAsync());
+  }, []);
+
+  useEffect(() => {
+    return subscribeToLocalAccountReset(() => {
+      setOnboardingDone(false);
+      setAppReady(false);
+      setShowSalesOnMount(false);
+    });
   }, []);
 
   const finishOnboarding = async () => {
@@ -146,8 +153,8 @@ export default function RootLayout() {
         <Stack.Screen
           name="result"
           options={{
-            animation: 'slide_from_right',
-            animationDuration: 250,
+            // Scan flow uses in-screen Reanimated (frame from camera + fade). Stack slide fights it.
+            animation: 'none',
           }}
         />
         <Stack.Screen name="collection-detail" options={NATIVE_PUSH_SCREEN_OPTIONS} />

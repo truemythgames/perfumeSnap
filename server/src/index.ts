@@ -885,13 +885,17 @@ async function handleAddToCollection(request: Request, env: Env): Promise<Respon
       if (!row || typeof row !== 'object') continue;
       const r = row as Record<string, unknown>;
       const imageUrl = typeof r.imageUrl === 'string' ? r.imageUrl : null;
-      const productUrl = typeof r.productUrl === 'string' ? r.productUrl : null;
-      if (!imageUrl || !productUrl) continue;
+      const rawUrl = typeof r.productUrl === 'string' ? r.productUrl : null;
+      if (!imageUrl || !rawUrl) continue;
+      const name = typeof r.name === 'string' ? r.name : '';
+      const brand = typeof r.brand === 'string' ? r.brand : '';
+      const retailer = typeof r.retailer === 'string' ? r.retailer : undefined;
+      const productUrl = resolveProductUrl(rawUrl, name, brand, retailer);
       out.push({
-        name: typeof r.name === 'string' ? r.name : '',
-        brand: typeof r.brand === 'string' ? r.brand : '',
+        name,
+        brand,
         estimatedPrice: typeof r.estimatedPrice === 'string' ? r.estimatedPrice : '',
-        retailer: typeof r.retailer === 'string' ? r.retailer : undefined,
+        retailer,
         imageUrl,
         productUrl,
         condition: typeof r.condition === 'string' ? r.condition : null,
@@ -1117,17 +1121,45 @@ async function serperRequest(
   });
 }
 
+function isGoogleListingUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).hostname.toLowerCase().includes('google.');
+  } catch {
+    return false;
+  }
+}
+
+function buildRetailerSearchUrl(name: string, brand: string, retailer?: string): string {
+  const query = encodeURIComponent(`${brand} ${name} perfume`.trim());
+  const key = (retailer || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (key.includes('amazon')) return `https://www.amazon.com/s?k=${query}`;
+  if (key.includes('ebay')) return `https://www.ebay.com/sch/i.html?_nkw=${query}`;
+  if (key.includes('sephora')) return `https://www.sephora.com/search?keyword=${query}`;
+  if (key.includes('walmart')) return `https://www.walmart.com/search?q=${query}`;
+  if (key.includes('fragrancenet')) return `https://www.fragrancenet.com/search?search=${query}`;
+  if (key.includes('macys') || key.includes('macy')) return `https://www.macys.com/shop/search?keyword=${query}`;
+  if (key.includes('nordstrom')) return `https://www.nordstrom.com/sr?keyword=${query}`;
+  return `https://www.amazon.com/s?k=${query}`;
+}
+
+function resolveProductUrl(
+  url: string | null | undefined,
+  name: string,
+  brand: string,
+  retailer?: string,
+): string {
+  const trimmed = url?.trim();
+  if (trimmed && !isGoogleListingUrl(trimmed)) return trimmed;
+  return buildRetailerSearchUrl(name, brand, retailer);
+}
+
 function pickSerperProductLink(s: SerperShopRaw): string | undefined {
   for (const candidate of [s.source_link, s.vendor_link, s.product_link, s.link]) {
-    if (!candidate) continue;
-    try {
-      const host = new URL(candidate).hostname.toLowerCase();
-      if (!host.includes('google.')) return candidate;
-    } catch {
-      continue;
-    }
+    if (!candidate || isGoogleListingUrl(candidate)) continue;
+    return candidate;
   }
-  return s.link;
+  return undefined;
 }
 
 function mapSerperShoppingItems(items: SerperShopRaw[]): Array<{
@@ -1319,6 +1351,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     try {
       const u = new URL(link);
       const host = u.hostname.toLowerCase();
+      if (host.includes('google.')) return false;
       const path = u.pathname.toLowerCase();
 
       if (host.includes('amazon.')) return path.includes('/dp/') || path.includes('/gp/product/');
@@ -1413,8 +1446,9 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
       usedShoppingIds.add(shopping._id);
     }
 
-    const pairedUrl = shopping?.product_link || shopping?.link || link;
-    if (!isLikelyProductUrl(pairedUrl)) continue;
+    const rawPaired = shopping?.product_link || link;
+    if (!rawPaired || isGoogleListingUrl(rawPaired) || !isLikelyProductUrl(rawPaired)) continue;
+    const pairedUrl = rawPaired;
     if (seenUrls.has(pairedUrl)) continue;
 
     let pairedDomain = domain;
@@ -1438,8 +1472,8 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
 
   // Add shopping rows with direct retailer links from shopping index.
   for (const s of preparedShopping) {
-    const candidate = s.product_link || s.link || '';
-    if (!candidate || isSkippedDomain(candidate)) continue;
+    const candidate = s.product_link || '';
+    if (!candidate || isSkippedDomain(candidate) || isGoogleListingUrl(candidate)) continue;
     if (!isLikelyProductUrl(candidate)) continue;
     let parsed: URL;
     try {
@@ -1489,7 +1523,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
       estimatedPrice: s.price || '',
       retailer: normalizeRetailerName(s.source, ''),
       imageUrl: s.thumbnail || null,
-      productUrl: s.product_link || s.link || `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(s.title || q)}`,
+      productUrl: resolveProductUrl(s.product_link, s.title || q, '', normalizeRetailerName(s.source, '')),
       condition: s.condition || null,
       _score: 6 + s._hits + (s.price ? 2 : 0) + (s.thumbnail ? 2 : 0),
     }));
@@ -1510,7 +1544,10 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   if (merged.length < 6) appendUnique(relaxed);
   if (merged.length < 6) appendUnique(fallbackFromShopping);
 
-  const results = merged.map(({ _score, ...row }) => row);
+  const results = merged.map(({ _score, ...row }) => ({
+    ...row,
+    productUrl: resolveProductUrl(row.productUrl, row.name, row.brand, row.retailer),
+  }));
 
   try {
     await env.DB.prepare(
@@ -1659,11 +1696,22 @@ async function handleSubmitFeedback(request: Request, env: Env): Promise<Respons
     perfumeName?: string;
     perfumeBrand?: string;
     satisfied?: boolean;
+    category?: string;
+    message?: string;
   }>();
 
-  if (typeof body.satisfied !== 'boolean' || !body.perfumeName) {
+  if (!body.perfumeName) {
     return jsonResponse({ error: 'Missing required fields' }, 400);
   }
+
+  const category = body.category || (body.satisfied === true ? 'like' : body.satisfied === false ? 'incorrect' : '');
+  if (!category) {
+    return jsonResponse({ error: 'Missing category or satisfied' }, 400);
+  }
+
+  const satisfied =
+    category === 'like' ? 1 : category === 'incorrect' ? 0 : body.satisfied === true ? 1 : body.satisfied === false ? 0 : 1;
+  const message = typeof body.message === 'string' ? body.message.trim().slice(0, 2000) : '';
 
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS feedback (
@@ -1672,13 +1720,32 @@ async function handleSubmitFeedback(request: Request, env: Env): Promise<Respons
       perfume_name TEXT NOT NULL,
       perfume_brand TEXT NOT NULL,
       satisfied INTEGER NOT NULL,
+      category TEXT,
+      message TEXT,
       created_at INTEGER NOT NULL
     )
   `).run();
 
-  await env.DB.prepare(
-    'INSERT INTO feedback (user_id, perfume_name, perfume_brand, satisfied, created_at) VALUES (?, ?, ?, ?, ?)'
-  ).bind(userId, body.perfumeName, body.perfumeBrand || '', body.satisfied ? 1 : 0, Date.now()).run();
+  try {
+    await env.DB.prepare('ALTER TABLE feedback ADD COLUMN category TEXT').run();
+  } catch { /* column exists */ }
+  try {
+    await env.DB.prepare('ALTER TABLE feedback ADD COLUMN message TEXT').run();
+  } catch { /* column exists */ }
+
+  const brand = body.perfumeBrand || '';
+  const createdAt = Date.now();
+  try {
+    await env.DB.prepare(
+      'INSERT INTO feedback (user_id, perfume_name, perfume_brand, satisfied, category, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(userId, body.perfumeName, brand, satisfied, category, message || '', createdAt).run();
+  } catch (e) {
+    console.error('Feedback insert (extended) failed, using legacy columns:', e);
+    const legacyBrand = message ? `${brand} [${category}] ${message}`.slice(0, 500) : brand;
+    await env.DB.prepare(
+      'INSERT INTO feedback (user_id, perfume_name, perfume_brand, satisfied, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(userId, body.perfumeName, legacyBrand, satisfied, createdAt).run();
+  }
 
   return jsonResponse({ ok: true });
 }

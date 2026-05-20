@@ -8,6 +8,7 @@ import {
   Pressable,
   Dimensions,
   Platform,
+  Modal,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import Animated, {
@@ -25,7 +26,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
+import * as Haptics from 'expo-haptics';
 import NoteChip from './NoteChip';
+import ResultFeedbackSheet from './ResultFeedbackSheet';
 import InfoRow from './InfoRow';
 import SimilarProductCard, {
   openListingUrl,
@@ -75,6 +78,7 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
   const displayImageUri = imageUri || prefill?.imageUri || undefined;
   const similarListings = prefill?.cachedSimilarListings ?? [];
   const [photoFullscreen, setPhotoFullscreen] = useState(false);
+  const [feedbackMenuVisible, setFeedbackMenuVisible] = useState(false);
   const fullscreenTranslateY = useSharedValue(0);
   const fullscreenOpacity = useSharedValue(0);
 
@@ -441,11 +445,37 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
         </View>
       </ScrollView>
 
-      <View style={[styles.resultBackRow, { paddingTop: insets.top + Spacing.sm }]} pointerEvents="box-none">
+      <View style={[styles.resultBackRow, { paddingTop: insets.top + Spacing.sm }]}>
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.backBtn}
+          activeOpacity={0.7}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setFeedbackMenuVisible(true);
+          }}
+        >
+          <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={feedbackMenuVisible}
+        transparent
+        animationType="none"
+        onRequestClose={() => setFeedbackMenuVisible(false)}
+      >
+        {result ? (
+          <ResultFeedbackSheet
+            visible={feedbackMenuVisible}
+            perfumeName={result.name}
+            perfumeBrand={result.brand}
+            onClose={() => setFeedbackMenuVisible(false)}
+          />
+        ) : null}
+      </Modal>
 
       <View style={[styles.footerBar, { paddingBottom: insets.bottom || Spacing.md }]}>
         <TouchableOpacity
@@ -549,7 +579,17 @@ const styles = StyleSheet.create({
   resultFramePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.surface },
   resultHeroFadeTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 80 },
   resultHeroFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 120 },
-  resultBackRow: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: Spacing.lg, zIndex: 2 },
+  resultBackRow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    zIndex: 10,
+  },
   backBtn: {
     width: 44,
     height: 44,

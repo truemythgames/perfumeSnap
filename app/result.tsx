@@ -16,6 +16,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -40,6 +41,7 @@ import { getPickedImageBase64, clearPickedImageBase64 } from '../services/imageT
 import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings, submitFeedback } from '../services/api';
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
+import ResultFeedbackSheet from '../components/ResultFeedbackSheet';
 import SimilarProductCard, {
   openListingUrl,
   SIMILAR_GRID_PADDING,
@@ -389,6 +391,7 @@ export default function ResultScreen() {
   const [premiumStatusChecked, setPremiumStatusChecked] = useState(false);
   const [resultFeedback, setResultFeedback] = useState<'yes' | 'no' | null>(null);
   const [priceFeedback, setPriceFeedback] = useState<'yes' | 'no' | null>(null);
+  const [feedbackMenuVisible, setFeedbackMenuVisible] = useState(false);
 
   useEffect(() => {
     getPremiumStatus()
@@ -1512,7 +1515,7 @@ export default function ResultScreen() {
                     if (resultFeedback) return;
                     setResultFeedback('yes');
                     trackResultFeedback(true, result.name, result.brand);
-                    submitFeedback(result.name, result.brand, true);
+                    submitFeedback(result.name, result.brand, 'like');
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   disabled={resultFeedback !== null}
@@ -1541,7 +1544,7 @@ export default function ResultScreen() {
                     if (resultFeedback) return;
                     setResultFeedback('no');
                     trackResultFeedback(false, result.name, result.brand);
-                    submitFeedback(result.name, result.brand, false);
+                    submitFeedback(result.name, result.brand, 'incorrect');
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   disabled={resultFeedback !== null}
@@ -1597,7 +1600,31 @@ export default function ResultScreen() {
               </Animated.View>
             </Animated.View>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.heroIconButton}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setFeedbackMenuVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
+
+        <Modal
+          visible={feedbackMenuVisible}
+          transparent
+          animationType="none"
+          onRequestClose={() => setFeedbackMenuVisible(false)}
+        >
+          <ResultFeedbackSheet
+            visible={feedbackMenuVisible}
+            perfumeName={result.name}
+            perfumeBrand={result.brand}
+            onClose={() => setFeedbackMenuVisible(false)}
+          />
+        </Modal>
 
         {/* Sticky footer bar */}
         <View style={[styles.footerBar, { paddingBottom: insets.bottom || Spacing.md }]}>
@@ -2119,8 +2146,19 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    zIndex: 2,
+    zIndex: 10,
+  },
+  heroIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   heroBackButton: {
     width: 44,

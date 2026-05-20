@@ -115,6 +115,20 @@ export function trackResultFeedback(satisfied: boolean, perfumeName: string, per
   });
 }
 
+export function trackResultFeedbackDetail(
+  category: string,
+  perfumeName: string,
+  perfumeBrand: string,
+  messageLength: number,
+) {
+  trackEvent('result_feedback_detail', {
+    category,
+    perfume_name: perfumeName,
+    perfume_brand: perfumeBrand,
+    message_length: String(messageLength),
+  });
+}
+
 export function trackPriceFeedback(reasonable: boolean, perfumeName: string, perfumeBrand: string) {
   trackEvent('price_feedback', {
     reasonable: reasonable ? 'yes' : 'no',

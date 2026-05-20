@@ -4,6 +4,10 @@ const USER_ID_KEY = 'perfumesnap_user_id';
 
 let cachedUserId: string | null = null;
 
+export function clearUserIdCache(): void {
+  cachedUserId = null;
+}
+
 function generateUuid(): string {
   // RFC4122-ish v4 UUID. Crypto-grade randomness is not required here.
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {

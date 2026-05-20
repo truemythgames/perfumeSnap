@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SimilarPerfume, buildShoppingUrl } from '../services/api';
+import { SimilarPerfume, resolveListingUrl } from '../services/api';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -211,7 +211,7 @@ export default function SimilarProductCard({
 }
 
 export function openListingUrl(perfume: SimilarPerfume): string {
-  return perfume.productUrl || buildShoppingUrl(perfume.name, perfume.brand, perfume.retailer);
+  return resolveListingUrl(perfume);
 }
 
 const styles = StyleSheet.create({

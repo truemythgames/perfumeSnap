@@ -73,8 +73,17 @@ export interface PerfumeChatMessage {
   content: string;
 }
 
+export function isGoogleListingUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).hostname.toLowerCase().includes('google.');
+  } catch {
+    return false;
+  }
+}
+
 export function buildShoppingUrl(perfumeName: string, brand: string, retailer?: string): string {
-  const query = encodeURIComponent(`${brand} ${perfumeName} perfume`);
+  const query = encodeURIComponent(`${brand} ${perfumeName} perfume`.trim());
   const key = (retailer || '').toLowerCase().replace(/[^a-z]/g, '');
 
   if (key.includes('amazon')) return `https://www.amazon.com/s?k=${query}`;
@@ -83,7 +92,9 @@ export function buildShoppingUrl(perfumeName: string, brand: string, retailer?: 
   if (key.includes('nordstrom')) return `https://www.nordstrom.com/sr?keyword=${query}`;
   if (key.includes('ulta')) return `https://www.ulta.com/ulta/a/_/Ntt-${query}`;
   if (key.includes('walmart')) return `https://www.walmart.com/search?q=${query}`;
-  if (key.includes('fragrancenet')) return `https://www.fragrancenet.com/search?q=${query}`;
+  if (key.includes('fragrancenet')) return `https://www.fragrancenet.com/search?search=${query}`;
+  if (key.includes('fragrancex')) return `https://www.fragrancex.com/search?search=${query}`;
+  if (key.includes('perfumania')) return `https://www.perfumania.com/search?q=${query}`;
   if (key.includes('bloomingdale')) return `https://www.bloomingdales.com/shop/search?keyword=${query}`;
   if (key.includes('macy') || key.includes('macys')) return `https://www.macys.com/shop/search?keyword=${query}`;
   if (key.includes('neimanmarcus') || key.includes('neiman')) return `https://www.neimanmarcus.com/en-us/search?q=${query}`;
@@ -92,8 +103,16 @@ export function buildShoppingUrl(perfumeName: string, brand: string, retailer?: 
   if (key.includes('douglas')) return `https://www.douglas.com/search?q=${query}`;
   if (key.includes('harrods')) return `https://www.harrods.com/en-us/search?searchTerm=${query}`;
   if (key.includes('theperfumeshop') || key.includes('perfumeshop')) return `https://www.theperfumeshop.com/search?q=${query}`;
+  if (key.includes('target')) return `https://www.target.com/s?searchTerm=${query}`;
 
-  return `https://www.google.com/search?tbm=shop&q=${query}`;
+  return `https://www.amazon.com/s?k=${query}`;
+}
+
+/** Prefer a direct retailer URL; never open Google Shopping. */
+export function resolveListingUrl(perfume: SimilarPerfume): string {
+  const direct = perfume.productUrl?.trim();
+  if (direct && !isGoogleListingUrl(direct)) return direct;
+  return buildShoppingUrl(perfume.name, perfume.brand, perfume.retailer);
 }
 
 export function normalizeSimilarPerfumes(raw: SimilarPerfume[] | string[]): SimilarPerfume[] {
@@ -225,16 +244,47 @@ export async function lookupPerfume(name: string, brand: string, externalSignal?
   }
 }
 
-export async function submitFeedback(perfumeName: string, perfumeBrand: string, satisfied: boolean): Promise<void> {
-  try {
-    const userId = await getOrCreateUserId();
-    await fetch(`${API_URL}/feedback`, {
+export type FeedbackCategory = 'like' | 'incorrect' | 'feature' | 'suggestion';
+
+export async function submitFeedback(
+  perfumeName: string,
+  perfumeBrand: string,
+  category: FeedbackCategory,
+  message?: string,
+): Promise<boolean> {
+  const userId = await getOrCreateUserId();
+  const name = perfumeName?.trim() || 'Unknown';
+  const brand = perfumeBrand?.trim() || 'Unknown';
+  const text = message?.trim() || '';
+  const satisfied = category === 'like' ? true : category === 'incorrect' ? false : true;
+
+  const post = (body: Record<string, unknown>) =>
+    fetch(`${API_URL}/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
-      body: JSON.stringify({ perfumeName, perfumeBrand, satisfied }),
+      body: JSON.stringify(body),
     });
+
+  try {
+    const res = await post({
+      perfumeName: name,
+      perfumeBrand: brand,
+      category,
+      message: text || undefined,
+      satisfied,
+    });
+    if (res.ok) return true;
+
+    // Older deployed workers require satisfied and ignore category/message.
+    const legacyBrand = text ? `${brand} [${category}] ${text.slice(0, 500)}` : brand;
+    const legacy = await post({
+      perfumeName: name,
+      perfumeBrand: legacyBrand,
+      satisfied,
+    });
+    return legacy.ok;
   } catch {
-    // Best-effort — don't block UX on feedback failure
+    return false;
   }
 }
 
