@@ -37,17 +37,14 @@ export default function RootLayout() {
   const navRef = useNavigationContainerRef();
 
   useEffect(() => {
-    // TODO: re-enable SecureStore check once onboarding is finalized
-    // SecureStore.getItemAsync(ONBOARDING_KEY)
-    //   .then(val => setOnboardingDone(val === '1'))
-    //   .catch(() => setOnboardingDone(false))
-    //   .finally(() => SplashScreen.hideAsync());
-    setOnboardingDone(false);
+    SecureStore.getItemAsync(ONBOARDING_KEY)
+      .then(val => setOnboardingDone(val === '1'))
+      .catch(() => setOnboardingDone(false))
+      .finally(() => SplashScreen.hideAsync());
   }, []);
 
   const finishOnboarding = async () => {
-    // TODO: re-enable persistence once onboarding is finalized
-    // await SecureStore.setItemAsync(ONBOARDING_KEY, '1');
+    await SecureStore.setItemAsync(ONBOARDING_KEY, '1');
 
     initCrashlytics();
     initFacebookSDK();

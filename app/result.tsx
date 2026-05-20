@@ -53,6 +53,7 @@ import {
   trackViewSimilar,
   trackChatOpened,
   trackResultFeedback,
+  trackPriceFeedback,
 } from '../services/analytics';
 import { canAddToCollection, FREE_LIMITS, getPremiumStatus } from '../services/access';
 import { addToHistory } from '../services/history';
@@ -415,6 +416,7 @@ export default function ResultScreen() {
   const [isPremium, setIsPremium] = useState(false);
   const [premiumStatusChecked, setPremiumStatusChecked] = useState(false);
   const [resultFeedback, setResultFeedback] = useState<'yes' | 'no' | null>(null);
+  const [priceFeedback, setPriceFeedback] = useState<'yes' | 'no' | null>(null);
 
   useEffect(() => {
     getPremiumStatus()
@@ -1175,8 +1177,7 @@ export default function ResultScreen() {
             <Text style={styles.name}>{result.name}</Text>
 
             {/* Price card */}
-            {isPremium ? (
-              (livePriceStats || result.priceRange) && (
+            {(livePriceStats || result.priceRange) && (
               <View style={styles.priceCard}>
                 <LinearGradient
                   colors={['#f5ead4', '#ece0c8', '#e3d5b8']}
@@ -1205,22 +1206,76 @@ export default function ResultScreen() {
                   </Text>
                 </LinearGradient>
               </View>
-              )
-            ) : premiumStatusChecked ? (
-              <View style={styles.lockedCard}>
-                <Text style={styles.lockedTitle}>Market Pricing is Premium</Text>
-                <Text style={styles.lockedText}>
-                  Unlock live market value and price range insights.
+            )}
+
+            {(livePriceStats || result.priceRange) && fromCollection !== '1' && !collectionPerfume && result.confidence !== 'low' && (
+              <View style={styles.feedbackCard}>
+                <Text style={styles.feedbackQuestion}>
+                  Do you find the Reference Price provided reasonable?
                 </Text>
-                <TouchableOpacity
-                  style={styles.unlockSmallButton}
-                  activeOpacity={0.85}
-                  onPress={() => router.push('/sales')}
-                >
-                  <Text style={styles.unlockSmallButtonText}>Unlock</Text>
-                </TouchableOpacity>
+                <View style={styles.feedbackRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.feedbackButton,
+                      priceFeedback === 'yes' && styles.feedbackButtonActive,
+                    ]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (priceFeedback) return;
+                      setPriceFeedback('yes');
+                      trackPriceFeedback(true, result.name, result.brand);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                    disabled={priceFeedback !== null}
+                  >
+                    <Ionicons
+                      name="thumbs-up-outline"
+                      size={16}
+                      color={priceFeedback === 'yes' ? Colors.primary : Colors.text}
+                    />
+                    <Text
+                      style={[
+                        styles.feedbackButtonText,
+                        priceFeedback === 'yes' && styles.feedbackButtonTextActive,
+                      ]}
+                    >
+                      Yes
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.feedbackButton,
+                      priceFeedback === 'no' && styles.feedbackButtonActive,
+                    ]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (priceFeedback) return;
+                      setPriceFeedback('no');
+                      trackPriceFeedback(false, result.name, result.brand);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                    disabled={priceFeedback !== null}
+                  >
+                    <Ionicons
+                      name="thumbs-down-outline"
+                      size={16}
+                      color={priceFeedback === 'no' ? '#c44' : Colors.text}
+                    />
+                    <Text
+                      style={[
+                        styles.feedbackButtonText,
+                        priceFeedback === 'no' && styles.feedbackButtonTextActive,
+                      ]}
+                    >
+                      No
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {priceFeedback && (
+                  <Text style={styles.feedbackThanks}>Thanks for your feedback!</Text>
+                )}
               </View>
-            ) : null}
+            )}
 
           </View>
 
@@ -1229,24 +1284,13 @@ export default function ResultScreen() {
             <TouchableOpacity
               style={styles.similarHeader}
               activeOpacity={0.7}
-              onPress={() => (isPremium ? openAllSimilar() : router.push('/sales'))}
+              onPress={openAllSimilar}
             >
               <Text style={styles.similarTitle}>Similar Perfumes</Text>
               <Text style={styles.similarChevron}>{'>'}</Text>
             </TouchableOpacity>
             <View style={styles.similarDivider} />
-            {!isPremium && premiumStatusChecked ? (
-              <View style={styles.lockedInlineCard}>
-                <Text style={styles.lockedText}>Unlock similar perfumes and shopping matches.</Text>
-                <TouchableOpacity
-                  style={styles.unlockSmallButton}
-                  activeOpacity={0.85}
-                  onPress={() => router.push('/sales')}
-                >
-                  <Text style={styles.unlockSmallButtonText}>Unlock</Text>
-                </TouchableOpacity>
-              </View>
-            ) : similarLoading ? (
+            {similarLoading ? (
               <ActivityIndicator size="small" color={Colors.text} style={{ marginVertical: 20 }} />
             ) : (
               <ScrollView
@@ -1299,102 +1343,83 @@ export default function ResultScreen() {
             ) : null}
           </View>
 
-            {isPremium ? (
-              <>
-                <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Fragrance Notes</Text>
-                <View style={styles.notesGroup}>
-                  <Text style={styles.notesLabel}>🌟 Top Notes</Text>
-                  <View style={styles.chipRow}>
-                    {result.topNotes.map((n, i) => (
-                      <NoteChip key={i} label={n} color={Colors.accent} />
-                    ))}
-                  </View>
-                </View>
-                <View style={styles.notesGroup}>
-                  <Text style={styles.notesLabel}>💜 Heart Notes</Text>
-                  <View style={styles.chipRow}>
-                    {result.heartNotes.map((n, i) => (
-                      <NoteChip key={i} label={n} color={Colors.primary} />
-                    ))}
-                  </View>
-                </View>
-                <View style={styles.notesGroup}>
-                  <Text style={styles.notesLabel}>🌲 Base Notes</Text>
-                  <View style={styles.chipRow}>
-                    {result.baseNotes.map((n, i) => (
-                      <NoteChip key={i} label={n} color={Colors.gold} />
-                    ))}
-                  </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Fragrance Notes</Text>
+              <View style={styles.notesGroup}>
+                <Text style={styles.notesLabel}>🌟 Top Notes</Text>
+                <View style={styles.chipRow}>
+                  {result.topNotes.map((n, i) => (
+                    <NoteChip key={i} label={n} color={Colors.accent} />
+                  ))}
                 </View>
               </View>
-
-                <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Details</Text>
-                <View style={styles.card}>
-                  <InfoRow icon="⏱️" label="Longevity" value={result.longevity} />
-                  <InfoRow icon="💨" label="Sillage" value={result.sillage} />
-                  <InfoRow icon="📅" label="Year" value={result.yearLaunched} />
-                  {shouldShowPerfumer ? (
-                    <InfoRow icon="👃" label="Perfumer" value={perfumerValue} />
-                  ) : null}
+              <View style={styles.notesGroup}>
+                <Text style={styles.notesLabel}>💜 Heart Notes</Text>
+                <View style={styles.chipRow}>
+                  {result.heartNotes.map((n, i) => (
+                    <NoteChip key={i} label={n} color={Colors.primary} />
+                  ))}
                 </View>
               </View>
-
-                <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Best For</Text>
-                <View style={styles.card}>
-                  <Text style={styles.cardLabel}>Occasions</Text>
-                  <View style={styles.chipRow}>
-                    {result.occasions.map((o, i) => (
-                      <NoteChip key={i} label={o} color={Colors.primary} />
-                    ))}
-                  </View>
-                  <Text style={[styles.cardLabel, { marginTop: Spacing.md }]}>Seasons</Text>
-                  <View style={styles.chipRow}>
-                    {result.seasons.map((s, i) => (
-                      <NoteChip key={i} label={s} color={Colors.accent} />
-                    ))}
-                  </View>
+              <View style={styles.notesGroup}>
+                <Text style={styles.notesLabel}>🌲 Base Notes</Text>
+                <View style={styles.chipRow}>
+                  {result.baseNotes.map((n, i) => (
+                    <NoteChip key={i} label={n} color={Colors.gold} />
+                  ))}
                 </View>
               </View>
+            </View>
 
-                <View style={styles.section}>
-                  <TouchableOpacity
-                    style={styles.askPerfumeButton}
-                    activeOpacity={0.85}
-                    onPress={openPerfumeChat}
-                  >
-                    <LinearGradient
-                      colors={['#3c2d1a', '#2a1f0e']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.askPerfumeGradient}
-                    >
-                      <Ionicons name="chatbubble-ellipses-outline" size={18} color="#f5ead4" />
-                      <Text style={styles.askPerfumeText}>Ask about this Perfume</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Details</Text>
+              <View style={styles.card}>
+                <InfoRow icon="⏱️" label="Longevity" value={result.longevity} />
+                <InfoRow icon="💨" label="Sillage" value={result.sillage} />
+                <InfoRow icon="📅" label="Year" value={result.yearLaunched} />
+                {shouldShowPerfumer ? (
+                  <InfoRow icon="👃" label="Perfumer" value={perfumerValue} />
+                ) : null}
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Best For</Text>
+              <View style={styles.card}>
+                <Text style={styles.cardLabel}>Occasions</Text>
+                <View style={styles.chipRow}>
+                  {result.occasions.map((o, i) => (
+                    <NoteChip key={i} label={o} color={Colors.primary} />
+                  ))}
                 </View>
-              </>
-            ) : premiumStatusChecked ? (
-              <View style={styles.section}>
-                <View style={styles.lockedCard}>
-                  <Text style={styles.lockedTitle}>Premium Unlocks Full Insights</Text>
-                  <Text style={styles.lockedText}>
-                    Get full notes, details, similar perfumes, market pricing, AI chat, and unlimited saves.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.unlockSmallButton}
-                    activeOpacity={0.85}
-                    onPress={() => router.push('/sales')}
-                  >
-                    <Text style={styles.unlockSmallButtonText}>Unlock Premium</Text>
-                  </TouchableOpacity>
+                <Text style={[styles.cardLabel, { marginTop: Spacing.md }]}>Seasons</Text>
+                <View style={styles.chipRow}>
+                  {result.seasons.map((s, i) => (
+                    <NoteChip key={i} label={s} color={Colors.accent} />
+                  ))}
                 </View>
               </View>
-            ) : null}
+            </View>
 
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.askPerfumeButton}
+                activeOpacity={0.85}
+                onPress={openPerfumeChat}
+              >
+                <LinearGradient
+                  colors={['#3c2d1a', '#2a1f0e']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.askPerfumeGradient}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={18} color="#f5ead4" />
+                  <Text style={styles.askPerfumeText}>Ask about this Perfume</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {fromCollection !== '1' && !collectionPerfume && (
             <View style={styles.feedbackCard}>
               <Text style={styles.feedbackQuestion}>
                 Are you satisfied with the result?
@@ -1463,6 +1488,7 @@ export default function ResultScreen() {
                 <Text style={styles.feedbackThanks}>Thanks for your feedback!</Text>
               )}
             </View>
+            )}
 
             <View style={{ height: 100 }} />
           </Animated.View>
@@ -1528,9 +1554,9 @@ export default function ResultScreen() {
                   styles.addCollectionButton,
                   savedToCollection && styles.addCollectionButtonDone,
                 ]}
-                onPress={handleSave}
+                onPress={savedToCollection ? () => router.replace({ pathname: '/', params: { tab: 'collection' } }) : handleSave}
                 activeOpacity={0.8}
-                disabled={savedToCollection || saving}
+                disabled={saving}
               >
                 <LinearGradient
                   colors={savedToCollection ? ['#2a6e2a', '#1e5e1e'] : [Colors.primary, Colors.primaryDark]}
@@ -1542,13 +1568,13 @@ export default function ResultScreen() {
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <Ionicons
-                      name={savedToCollection ? 'checkmark-circle' : 'add-circle-outline'}
+                      name={savedToCollection ? 'albums-outline' : 'add-circle-outline'}
                       size={20}
                       color="#fff"
                     />
                   )}
                   <Text style={styles.addCollectionText}>
-                    {savedToCollection ? 'Saved' : saving ? 'Saving...' : 'Add to Collection'}
+                    {savedToCollection ? 'View Collection' : saving ? 'Saving...' : 'Add to Collection'}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>

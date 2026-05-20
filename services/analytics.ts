@@ -113,3 +113,11 @@ export function trackResultFeedback(satisfied: boolean, perfumeName: string, per
     perfume_brand: perfumeBrand,
   });
 }
+
+export function trackPriceFeedback(reasonable: boolean, perfumeName: string, perfumeBrand: string) {
+  trackEvent('price_feedback', {
+    reasonable: reasonable ? 'yes' : 'no',
+    perfume_name: perfumeName,
+    perfume_brand: perfumeBrand,
+  });
+}

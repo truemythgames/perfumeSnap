@@ -8,7 +8,7 @@ import {
   Dimensions,
   Alert,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,10 +35,12 @@ const SPRING_CONFIG = { damping: 22, stiffness: 250, mass: 0.8 };
 const NOTCH_OVERFLOW = CAMERA_BTN_SIZE / 2 + 8;
 
 export default function MainScreen() {
-  const [activeTab, setActiveTab] = useState(0);
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const initialTab = params.tab === 'collection' ? 1 : 0;
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [editState, setEditState] = useState({ editing: false, selectedCount: 0 });
   const collectionRef = useRef<CollectionTabHandle>(null);
-  const translateX = useSharedValue(0);
+  const translateX = useSharedValue(-initialTab * SCREEN_WIDTH);
   const insets = useSafeAreaInsets();
 
   const handleEditStateChange = useCallback(

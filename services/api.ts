@@ -26,6 +26,7 @@ export async function scrapeProductImage(name: string, brand: string): Promise<s
 
 export interface PerfumeResult {
   identified: boolean;
+  confidence?: 'high' | 'medium' | 'low';
   name: string;
   brand: string;
   fragranceFamily: string;
