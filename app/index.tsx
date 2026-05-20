@@ -25,6 +25,7 @@ import * as Haptics from 'expo-haptics';
 import HomeTab from '../components/HomeTab';
 import CollectionTab, { CollectionTabHandle } from '../components/CollectionTab';
 import ScanCoachmark, { type CoachmarkAnchor } from '../components/ScanCoachmark';
+import ExportSheet from '../components/ExportSheet';
 import { Colors, Spacing, FontSizes } from '../constants/theme';
 import { trackCameraOpened, trackTabSwitch } from '../services/analytics';
 import { FREE_LIMITS, getScanAllowance } from '../services/access';
@@ -47,6 +48,9 @@ export default function MainScreen() {
   const insets = useSafeAreaInsets();
   const [showScanCoachmark, setShowScanCoachmark] = useState(false);
   const [coachmarkAnchor, setCoachmarkAnchor] = useState<CoachmarkAnchor | null>(null);
+  const [exportVisible, setExportVisible] = useState(false);
+  const [exportItemIds, setExportItemIds] = useState<string[] | undefined>(undefined);
+  const [exportItemCount, setExportItemCount] = useState(0);
 
   useEffect(() => {
     hasSeenScanCoachmark().then((seen) => {
@@ -79,6 +83,20 @@ export default function MainScreen() {
     (state: { editing: boolean; selectedCount: number }) => setEditState(state),
     [],
   );
+
+  const handleExportSelected = useCallback(() => {
+    const ids = collectionRef.current?.getSelectedIds() ?? [];
+    if (ids.length === 0) return;
+    setExportItemIds(ids);
+    setExportItemCount(ids.length);
+    setExportVisible(true);
+  }, []);
+
+  const handleRequestExport = useCallback((itemIds: string[], count: number) => {
+    setExportItemIds(itemIds.length > 0 ? itemIds : undefined);
+    setExportItemCount(count);
+    setExportVisible(true);
+  }, []);
 
   const editOverlayTranslateY = useSharedValue(200);
 
@@ -176,7 +194,7 @@ export default function MainScreen() {
             <HomeTab />
           </View>
           <View style={styles.page}>
-            <CollectionTab ref={collectionRef} onEditStateChange={handleEditStateChange} />
+            <CollectionTab ref={collectionRef} onEditStateChange={handleEditStateChange} onRequestExport={handleRequestExport} />
           </View>
         </Animated.View>
       </GestureDetector>
@@ -267,9 +285,20 @@ export default function MainScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.editOverlayBtn}>
-            <Ionicons name="share-outline" size={22} color={Colors.textMuted} />
-            <Text style={[styles.editOverlayText, { color: Colors.textMuted }]}>
+          <TouchableOpacity
+            style={styles.editOverlayBtn}
+            onPress={handleExportSelected}
+            disabled={editState.selectedCount === 0}
+          >
+            <Ionicons
+              name="share-outline"
+              size={22}
+              color={editState.selectedCount > 0 ? Colors.primary : Colors.textMuted}
+            />
+            <Text style={[
+              styles.editOverlayText,
+              { color: editState.selectedCount > 0 ? Colors.primary : Colors.textMuted },
+            ]}>
               Export
             </Text>
           </TouchableOpacity>
@@ -281,6 +310,17 @@ export default function MainScreen() {
         anchor={coachmarkAnchor}
         onDismiss={dismissScanCoachmark}
       />
+
+      {exportVisible && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 9999 }]} pointerEvents="box-none">
+          <ExportSheet
+            visible={exportVisible}
+            itemCount={exportItemCount}
+            itemIds={exportItemIds}
+            onClose={() => setExportVisible(false)}
+          />
+        </View>
+      )}
     </GestureHandlerRootView>
   );
 }

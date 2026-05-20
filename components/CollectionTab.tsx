@@ -488,14 +488,17 @@ function FilterSheet({ filter, onApply, onClose, brands, maxPrice, currencySymbo
 
 export interface CollectionTabHandle {
   deleteSelected: () => void;
+  getSelectedIds: () => string[];
+  getTotalCount: () => number;
 }
 
 interface CollectionTabProps {
   onEditStateChange?: (state: { editing: boolean; selectedCount: number }) => void;
+  onRequestExport?: (itemIds: string[], count: number) => void;
 }
 
 const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
-  ({ onEditStateChange }, ref) => {
+  ({ onEditStateChange, onRequestExport }, ref) => {
   const insets = useSafeAreaInsets();
   const ICON_BAR_HEIGHT = insets.top + 48;
   const [items, setItems] = useState<CollectionItem[]>([]);
@@ -637,7 +640,9 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
   useImperativeHandle(ref, () => ({
     deleteSelected: handleDeleteSelected,
-  }), [handleDeleteSelected]);
+    getSelectedIds: () => Array.from(selectedIds),
+    getTotalCount: () => items.length,
+  }), [handleDeleteSelected, selectedIds, items.length]);
 
   useEffect(() => {
     onEditStateChange?.({ editing, selectedCount: selectedIds.size });
@@ -993,7 +998,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
               <TouchableOpacity hitSlop={8} onPress={() => router.push('/search')}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
             )}
             {items.length > 0 && (
-              <TouchableOpacity hitSlop={8}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
+              <TouchableOpacity hitSlop={8} onPress={() => onRequestExport?.([], items.length)}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
             )}
             <TouchableOpacity hitSlop={8} onPress={() => router.push('/history')}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
             <TouchableOpacity hitSlop={8} onPress={() => router.push('/settings')}><Ionicons name="ellipsis-horizontal" size={22} color={Colors.text} /></TouchableOpacity>
@@ -1182,6 +1187,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.lg,
   },
+  toolRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
   toolBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1201,6 +1211,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+  },
+  editToolRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
   },
   cancelText: {
     fontSize: FontSizes.sm,

@@ -7,6 +7,7 @@ interface Env {
   PRICES_API_KEY?: string;
   REPLICATE_API_KEY?: string;
   ADMIN_KEY?: string;
+  RESEND_API_KEY?: string;
 }
 
 // ----------------------------- Articles Data -----------------------------
@@ -470,6 +471,11 @@ export default {
 
       if (url.pathname === '/articles/generate-images' && request.method === 'POST') {
         return await handleGenerateArticleImages(request, env);
+      }
+
+      // ---- Export ----
+      if (url.pathname === '/export' && request.method === 'POST') {
+        return await handleExportCollection(request, env);
       }
 
       // ---- Feedback ----
@@ -1748,6 +1754,170 @@ async function handleSubmitFeedback(request: Request, env: Env): Promise<Respons
   }
 
   return jsonResponse({ ok: true });
+}
+
+// ----------------------------- Export --------------------------------
+
+function escCsv(value: unknown): string {
+  const s = String(value ?? '').replace(/\r?\n/g, ' ');
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+async function handleExportCollection(request: Request, env: Env): Promise<Response> {
+  const userId = getUserId(request);
+  if (!userId) return jsonResponse({ error: 'Missing or invalid userId' }, 400);
+
+  let body: { email?: string; itemIds?: string[] };
+  try {
+    body = await request.json<{ email?: string; itemIds?: string[] }>();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON' }, 400);
+  }
+
+  const email = (body.email || '').trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return jsonResponse({ error: 'Invalid email address' }, 400);
+  }
+
+  const specificIds = Array.isArray(body.itemIds) && body.itemIds.length > 0
+    ? body.itemIds.filter((id) => typeof id === 'string' && id.length > 0)
+    : null;
+
+  let rows: { perfume_json: string; created_at: number }[];
+  if (specificIds && specificIds.length > 0) {
+    const placeholders = specificIds.map(() => '?').join(',');
+    const result = await env.DB.prepare(
+      `SELECT perfume_json, created_at FROM collection_items WHERE user_id = ? AND id IN (${placeholders}) ORDER BY created_at DESC`
+    ).bind(userId, ...specificIds).all<{ perfume_json: string; created_at: number }>();
+    rows = result.results ?? [];
+  } else {
+    const result = await env.DB.prepare(
+      'SELECT perfume_json, created_at FROM collection_items WHERE user_id = ? ORDER BY created_at DESC'
+    ).bind(userId).all<{ perfume_json: string; created_at: number }>();
+    rows = result.results ?? [];
+  }
+
+  if (rows.length === 0) {
+    return jsonResponse({ error: 'No items to export' }, 400);
+  }
+
+  const CSV_HEADERS = [
+    'Photo', 'Name', 'Brand', 'Fragrance Family', 'Concentration',
+    'Reference Price', 'Rating', 'Gender', 'Year Launched',
+    'Top Notes', 'Heart Notes', 'Base Notes',
+    'Longevity', 'Sillage', 'Occasions', 'Seasons', 'Description',
+  ];
+
+  const csvRows = [CSV_HEADERS.join(',')];
+  for (const row of rows) {
+    let p: Record<string, unknown> = {};
+    try { p = JSON.parse(row.perfume_json); } catch { continue; }
+
+    csvRows.push([
+      escCsv(p.imageUri || ''),
+      escCsv(p.name || ''),
+      escCsv(p.brand || ''),
+      escCsv(p.fragranceFamily || ''),
+      escCsv(p.concentration || ''),
+      escCsv(p.priceRange || ''),
+      escCsv(p.rating || ''),
+      escCsv(p.gender || ''),
+      escCsv(p.yearLaunched || ''),
+      escCsv(Array.isArray(p.topNotes) ? (p.topNotes as string[]).join(', ') : ''),
+      escCsv(Array.isArray(p.heartNotes) ? (p.heartNotes as string[]).join(', ') : ''),
+      escCsv(Array.isArray(p.baseNotes) ? (p.baseNotes as string[]).join(', ') : ''),
+      escCsv(p.longevity || ''),
+      escCsv(p.sillage || ''),
+      escCsv(Array.isArray(p.occasions) ? (p.occasions as string[]).join(', ') : ''),
+      escCsv(Array.isArray(p.seasons) ? (p.seasons as string[]).join(', ') : ''),
+      escCsv(p.description || ''),
+    ].join(','));
+  }
+
+  const csvContent = csvRows.join('\n');
+  const now = new Date();
+  const dateStr = now.toISOString().replace(/T/, ' ').replace(/\..+/, '') + ' UTC';
+  const fileDateStr = now.toISOString().replace(/[:T]/g, '-').slice(0, 19);
+  const fileName = `PerfumeSnap-Collection-${rows.length}items-${fileDateStr}.csv`;
+
+  if (!env.RESEND_API_KEY) {
+    return jsonResponse({ error: 'Email service not configured' }, 503);
+  }
+
+  const htmlBody = `
+<div style="font-family: Georgia, 'Times New Roman', serif; max-width: 600px; margin: 0 auto; color: #2a1f0e;">
+  <div style="background: linear-gradient(135deg, #f5ead4, #e8dcc4); padding: 32px 24px; border-radius: 12px;">
+    <h2 style="margin: 0 0 20px; color: #2a1f0e; font-size: 22px;">Your Collection Export</h2>
+    <p style="line-height: 1.6; margin: 0 0 16px;">Dear user,</p>
+    <p style="line-height: 1.6; margin: 0 0 16px;">
+      We're happy to let you know that your request on <strong>${dateStr}</strong> to export your perfume collection has been successfully processed.
+      We've attached a CSV file containing the details of <strong>${rows.length} item${rows.length !== 1 ? 's' : ''}</strong> in your collection.
+    </p>
+    <p style="line-height: 1.6; margin: 0 0 16px; font-style: italic; color: #5c4f3f;">
+      Please note that the "reference price" shown is an estimate based on recent market trends and should not be considered a formal appraisal.
+    </p>
+    <p style="line-height: 1.6; margin: 0 0 16px;">
+      Please keep this file as a record of your collection. If you have any questions or need further assistance, reply to this email or contact our support team.
+    </p>
+    <p style="line-height: 1.6; margin: 0 0 16px;">
+      Thank you for using PerfumeSnap. We look forward to continuing to support your fragrance journey!
+    </p>
+    <p style="line-height: 1.6; margin: 0 0 4px;">Happy collecting,</p>
+    <p style="line-height: 1.6; margin: 0; font-weight: 700; color: #c8943c;">The PerfumeSnap Team</p>
+  </div>
+</div>`;
+
+  const textBody = `Dear user,
+
+We're happy to let you know that your request on ${dateStr} to export your perfume collection has been successfully processed. We've attached a CSV file containing the details of ${rows.length} item${rows.length !== 1 ? 's' : ''} in your collection.
+
+Please note that the "reference price" shown is an estimate based on recent market trends and should not be considered a formal appraisal.
+
+Please keep this file as a record of your collection. If you have any questions or need further assistance, reply to this email or contact our support team.
+
+Thank you for using PerfumeSnap. We look forward to continuing to support your fragrance journey!
+
+Happy collecting,
+The PerfumeSnap Team`;
+
+  const csvBase64 = btoa(unescape(encodeURIComponent(csvContent)));
+
+  try {
+    const resendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'PerfumeSnap <noreply@perfumesnap.app>',
+        to: [email],
+        subject: `Your PerfumeSnap Collection Export (${rows.length} items)`,
+        html: htmlBody,
+        text: textBody,
+        attachments: [
+          {
+            filename: fileName,
+            content: csvBase64,
+          },
+        ],
+      }),
+    });
+
+    if (!resendRes.ok) {
+      const errData = await resendRes.text();
+      console.error('Resend API error:', resendRes.status, errData);
+      return jsonResponse({ error: 'Failed to send email' }, 502);
+    }
+
+    return jsonResponse({ ok: true });
+  } catch (e) {
+    console.error('Export email error:', e);
+    return jsonResponse({ error: 'Failed to send email' }, 500);
+  }
 }
 
 // ----------------------------- Admin ---------------------------------

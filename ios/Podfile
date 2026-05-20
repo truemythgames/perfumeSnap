@@ -20,7 +20,15 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
-use_modular_headers!
+# Firebase Swift pods need modular headers for these C/ObjC dependencies
+pod 'GoogleUtilities', :modular_headers => true
+pod 'GoogleDataTransport', :modular_headers => true
+pod 'nanopb', :modular_headers => true
+pod 'FirebaseCore', :modular_headers => true
+pod 'FirebaseCoreExtension', :modular_headers => true
+pod 'FirebaseInstallations', :modular_headers => true
+pod 'FirebaseCoreInternal', :modular_headers => true
+pod 'FirebaseSessions', :modular_headers => true
 
 target 'PerfumeSnap' do
   use_expo_modules!

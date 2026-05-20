@@ -488,3 +488,21 @@ export async function chatAboutPerfume(
   }
   throw new Error('Chat failed.');
 }
+
+export async function exportCollection(
+  email: string,
+  itemIds?: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  const userId = await getOrCreateUserId();
+  try {
+    const res = await fetch(`${API_URL}/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+      body: JSON.stringify({ email, itemIds }),
+    });
+    const data = await res.json() as { ok?: boolean; error?: string };
+    return { ok: !!data.ok, error: data.error };
+  } catch {
+    return { ok: false, error: 'Network error' };
+  }
+}
