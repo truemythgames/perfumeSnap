@@ -38,7 +38,31 @@ export default function RootLayout() {
 
   useEffect(() => {
     SecureStore.getItemAsync(ONBOARDING_KEY)
-      .then(val => setOnboardingDone(val === '1'))
+      .then(async (val) => {
+        const done = val === '1';
+        setOnboardingDone(done);
+        if (done) {
+          initCrashlytics();
+          initFacebookSDK();
+          analytics().setAnalyticsCollectionEnabled(true);
+          analytics().logEvent('app_open');
+
+          const userId = await getOrCreateUserId();
+          await initRevenueCat(userId);
+
+          if (!isPaywallDismissedForSession()) {
+            try {
+              const premium = await isPremiumUser(userId);
+              if (!premium) {
+                dismissPaywallForSession();
+                setShowSalesOnMount(true);
+              }
+            } catch { /* ignore */ }
+          }
+
+          setAppReady(true);
+        }
+      })
       .catch(() => setOnboardingDone(false))
       .finally(() => SplashScreen.hideAsync());
   }, []);
