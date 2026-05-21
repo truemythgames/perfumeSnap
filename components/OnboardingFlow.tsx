@@ -1548,15 +1548,15 @@ export default function OnboardingFlow({ onComplete }: Props) {
             <View style={st.loadingLines}>
               <Animated.View style={[st.loadingLineRow, loadingLine1Style]}>
                 <Ionicons name="checkmark-circle" size={20} color="#d4a54a" />
-                <Text style={st.loadingLineText}>Building your collector profile...</Text>
+                <Text style={st.loadingLineText}>Setting up your fragrance profile...</Text>
               </Animated.View>
               <Animated.View style={[st.loadingLineRow, loadingLine2Style]}>
                 <Ionicons name="checkmark-circle" size={20} color="#d4a54a" />
-                <Text style={st.loadingLineText}>Sizing tools to your collection...</Text>
+                <Text style={st.loadingLineText}>Calibrating market valuations...</Text>
               </Animated.View>
               <Animated.View style={[st.loadingLineRow, loadingLine3Style]}>
                 <Ionicons name="checkmark-circle" size={20} color="#d4a54a" />
-                <Text style={st.loadingLineText}>Focusing features on your goals...</Text>
+                <Text style={st.loadingLineText}>Preparing your personalized recommendations...</Text>
               </Animated.View>
             </View>
           </View>

@@ -20,7 +20,6 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
-# Firebase Swift pods need modular headers for these C/ObjC dependencies
 pod 'GoogleUtilities', :modular_headers => true
 pod 'GoogleDataTransport', :modular_headers => true
 pod 'nanopb', :modular_headers => true
