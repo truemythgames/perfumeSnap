@@ -38,17 +38,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
 import { getPickedImageBase64, clearPickedImageBase64 } from '../services/imageTransfer';
-import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings, submitFeedback } from '../services/api';
+import { identifyPerfume, lookupPerfume, getApiUrl, PerfumeResult, SimilarPerfume, normalizeSimilarPerfumes, addToCollection, uploadImage, getSimilarListings, submitFeedback, openSimilarListing, hasValidSimilarListings, filterValidSimilarListings } from '../services/api';
 import NoteChip from '../components/NoteChip';
 import InfoRow from '../components/InfoRow';
 import ResultFeedbackSheet from '../components/ResultFeedbackSheet';
-import SimilarProductCard, {
-  openListingUrl,
-  SIMILAR_GRID_PADDING,
-  SIMILAR_GRID_GAP,
-  SIMILAR_CARD_WIDTH,
-  getSimilarCardHeight,
-} from '../components/SimilarProductCard';
+import SimilarCardSmall, { RESULT_SIMILAR_SECTION } from '../components/SimilarCardSmall';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import {
   trackScreenView,
@@ -64,9 +58,16 @@ import {
   trackResultFeedback,
   trackPriceFeedback,
 } from '../services/analytics';
-import { canAddToCollection, FREE_LIMITS, getPremiumStatus } from '../services/access';
+import { canAddToCollection, FREE_LIMITS } from '../services/access';
 import { addToHistory } from '../services/history';
 import { getResultPrefill } from '../services/resultNavigationCache';
+import { usePreferredCurrency } from '../hooks/usePreferredCurrency';
+import {
+  computeLivePriceStats,
+  formatPriceRange,
+  splitCurrencyDisplay,
+} from '../utils/perfumePricing';
+import { formatPerfumeTitle } from '../utils/perfumeDisplay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -164,115 +165,6 @@ const PARTICLE_COUNT = 40;
 const PARTICLE_DELAYS = Array.from({ length: PARTICLE_COUNT }, (_, i) =>
   Math.round((i / PARTICLE_COUNT) * 8000 + Math.random() * 500),
 );
-
-function parseNumericPrice(raw?: string): number | null {
-  if (!raw) return null;
-  const cleaned = raw.replace(/,/g, '');
-  const match = cleaned.match(/\$?\s*(\d+(?:\.\d+)?)/);
-  if (!match) return null;
-  const value = Number(match[1]);
-  return Number.isFinite(value) ? value : null;
-}
-
-function isLikelySampleOrDecant(item: SimilarPerfume): boolean {
-  const text = `${item.name || ''} ${item.brand || ''}`.toLowerCase();
-  if (/(decant|sample|vial|travel|mini|tester)/.test(text)) return true;
-
-  const mlMatch = text.match(/(\d+(?:\.\d+)?)\s*ml\b/);
-  if (mlMatch) {
-    const ml = Number(mlMatch[1]);
-    if (Number.isFinite(ml) && ml > 0 && ml <= 15) return true;
-  }
-  const ozMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz\b/);
-  if (ozMatch) {
-    const oz = Number(ozMatch[1]);
-    if (Number.isFinite(oz) && oz > 0 && oz <= 0.5) return true;
-  }
-  return false;
-}
-
-const DEVICE_LOCALE = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
-const localeParts = DEVICE_LOCALE.replace('_', '-').split('-');
-const DEVICE_REGION = (localeParts[1] || 'US').toUpperCase();
-const REGION_TO_CURRENCY: Record<string, string> = {
-  US: 'USD', GB: 'GBP',
-  GR: 'EUR', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', NL: 'EUR', IE: 'EUR', PT: 'EUR', CY: 'EUR',
-  AU: 'AUD', CA: 'CAD', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK',
-  JP: 'JPY', KR: 'KRW', CN: 'CNY', IN: 'INR', AE: 'AED', SA: 'SAR', TR: 'TRY',
-};
-const DEFAULT_CURRENCY = REGION_TO_CURRENCY[DEVICE_REGION] || 'USD';
-
-function formatMoney(value: number, currencyCode: string): string {
-  try {
-    const formatted = new Intl.NumberFormat(DEVICE_LOCALE, {
-      style: 'currency',
-      currency: currencyCode,
-      currencyDisplay: 'narrowSymbol',
-      maximumFractionDigits: 2,
-    }).format(value);
-    // Normalize variants like "US$50.49" / "USD 50.49" to plain symbol form.
-    return formatted
-      .replace(/^USD\s*/i, '$')
-      .replace(/^US\$/i, '$')
-      .replace(/^([A-Z]{2})\$/i, '$');
-  } catch {
-    return `$${value.toFixed(2)}`;
-  }
-}
-
-function getCurrencySymbol(currencyCode: string): string {
-  try {
-    const parts = new Intl.NumberFormat(DEVICE_LOCALE, {
-      style: 'currency',
-      currency: currencyCode,
-      currencyDisplay: 'narrowSymbol',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).formatToParts(0);
-    const symbol = parts.find((p) => p.type === 'currency')?.value;
-    if (symbol) return symbol
-      .replace(/^USD$/i, '$')
-      .replace(/^US\$/i, '$')
-      .replace(/^([A-Z]{2})\$/i, '$');
-  } catch {}
-  return '$';
-}
-
-function formatNumberValue(value: number): string {
-  try {
-    return new Intl.NumberFormat(DEVICE_LOCALE, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
-}
-
-function formatSingleCurrencyRange(min: number, max: number, currencyCode: string): string {
-  const symbol = getCurrencySymbol(currencyCode);
-  if (min === max) return `${symbol}${formatNumberValue(min)}`;
-  return `${symbol}${formatNumberValue(min)}-${formatNumberValue(max)}`;
-}
-
-function formatPriceRange(raw: string | undefined, currencyCode: string): string {
-  if (!raw) return '';
-  const nums = raw.match(/[\d]+(?:[.,]\d+)?/g);
-  if (!nums || nums.length === 0) return raw;
-  const values = nums
-    .map((n) => Number(n.replace(',', '.')))
-    .filter((v) => Number.isFinite(v));
-  if (values.length === 0) return raw;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  return formatSingleCurrencyRange(min, max, currencyCode);
-}
-
-function splitCurrencyDisplay(display: string): { currency: string; amount: string } {
-  const m = display.trim().match(/^([^\d\s.,-]+)\s*(.+)$/);
-  if (!m) return { currency: '', amount: display };
-  return { currency: m[1], amount: m[2] };
-}
 
 export default function ResultScreen() {
   const params = useLocalSearchParams<{
@@ -378,46 +270,37 @@ export default function ResultScreen() {
   const [photoFullscreen, setPhotoFullscreen] = useState(false);
   const [savedToCollection, setSavedToCollection] = useState(() => fromCollection === '1');
   const [saving, setSaving] = useState(false);
-  const hasCachedSimilar = (collectionPerfume?.cachedSimilarListings?.length ?? 0) > 0;
-  const [similarListings, setSimilarListings] = useState<SimilarPerfume[]>(() => {
-    if (!collectionPerfume?.cachedSimilarListings) return [];
-    return collectionPerfume.cachedSimilarListings;
-  });
+  const hasCachedSimilar = hasValidSimilarListings(collectionPerfume?.cachedSimilarListings);
+  const [similarListings, setSimilarListings] = useState<SimilarPerfume[]>(() =>
+    filterValidSimilarListings(collectionPerfume?.cachedSimilarListings ?? []),
+  );
   const [similarLoading, setSimilarLoading] = useState(
     () => isCollectionDetail && !hasCachedSimilar,
   );
   const [similarResolvedOnProcess, setSimilarResolvedOnProcess] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
-  const [premiumStatusChecked, setPremiumStatusChecked] = useState(false);
   const [resultFeedback, setResultFeedback] = useState<'yes' | 'no' | null>(null);
+  const preferredCurrency = usePreferredCurrency();
   const [priceFeedback, setPriceFeedback] = useState<'yes' | 'no' | null>(null);
   const [feedbackMenuVisible, setFeedbackMenuVisible] = useState(false);
 
   useEffect(() => {
-    getPremiumStatus()
-      .then(setIsPremium)
-      .finally(() => setPremiumStatusChecked(true));
-  }, []);
-
-  useEffect(() => {
     if (!result) return;
-    if (fromCollection === '1') {
-      setSimilarListings(collectionPerfume?.cachedSimilarListings || []);
+    if (similarResolvedOnProcess && fromCollection !== '1') {
       setSimilarLoading(false);
       return;
     }
-    if (similarResolvedOnProcess) {
+    if (hasValidSimilarListings(similarListings)) {
       setSimilarLoading(false);
       return;
     }
     setSimilarLoading(true);
     getSimilarListings(result.name, result.brand)
       .then((listings) => {
-        setSimilarListings(listings);
+        if (listings.length > 0) setSimilarListings(filterValidSimilarListings(listings));
         setSimilarLoading(false);
       })
       .catch(() => setSimilarLoading(false));
-  }, [result?.name, result?.brand, fromCollection, collectionPerfume?.cachedSimilarListings, similarResolvedOnProcess]);
+  }, [result?.name, result?.brand, fromCollection, similarResolvedOnProcess]);
 
   const openAllSimilar = useCallback(() => {
     if (!result) return;
@@ -455,36 +338,10 @@ export default function ResultScreen() {
       params: { perfume: JSON.stringify(perfumeForChat) },
     });
   }, [result]);
-  const livePriceStats = useMemo(() => {
-    const priced = similarListings
-      .filter((item) => !isLikelySampleOrDecant(item))
-      .map((item) => ({
-        price: parseNumericPrice(item.estimatedPrice),
-        retailer: item.retailer || 'Retailer',
-      }))
-      .filter((x): x is { price: number; retailer: string } => x.price !== null)
-      .filter((x) => x.price >= 10);
-    if (priced.length === 0) return null;
-
-    let sorted = priced.map((p) => p.price).sort((a, b) => a - b);
-
-    // Trim extreme tails when we have enough offers.
-    if (sorted.length >= 5) {
-      const from = Math.floor(sorted.length * 0.2);
-      const to = Math.ceil(sorted.length * 0.8);
-      sorted = sorted.slice(from, to);
-    }
-
-    // Keep only prices in a reasonable band around median.
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const bounded = sorted.filter((v) => v >= median * 0.6 && v <= median * 1.8);
-    if (bounded.length >= 2) sorted = bounded;
-
-    const min = sorted[0];
-    const max = sorted[sorted.length - 1];
-    const display = formatSingleCurrencyRange(min, max, DEFAULT_CURRENCY);
-    return { display };
-  }, [similarListings]);
+  const livePriceStats = useMemo(
+    () => computeLivePriceStats(similarListings, preferredCurrency),
+    [similarListings, preferredCurrency],
+  );
 
   const insets = useSafeAreaInsets();
 
@@ -756,7 +613,7 @@ export default function ResultScreen() {
       historySaved.current = true;
       addToHistory(perfume, imageUri).catch(() => {});
     }
-    if (preloadedSimilar) setSimilarListings(preloadedSimilar);
+    if (preloadedSimilar) setSimilarListings(filterValidSimilarListings(preloadedSimilar));
     setSimilarResolvedOnProcess(similarResolved);
     setSimilarLoading(false);
     setLoading(false);
@@ -1055,7 +912,7 @@ export default function ResultScreen() {
     const resultBodyStyle = isCollectionDetail ? undefined : resultScreenAnimStyle;
     const displayedPrice = livePriceStats
       ? livePriceStats.display
-      : formatPriceRange(result.priceRange, DEFAULT_CURRENCY);
+      : formatPriceRange(result.priceRange, preferredCurrency);
     const splitPrice = splitCurrencyDisplay(displayedPrice);
     const perfumerValue = (result.perfumer || '').trim();
     const shouldShowPerfumer = Boolean(
@@ -1118,7 +975,8 @@ export default function ResultScreen() {
             />
             <LinearGradient
               colors={['transparent', Colors.background]}
-              style={styles.resultHeroFade}
+              locations={[0.55, 1]}
+              style={styles.resultHeroFadeBottom}
               pointerEvents="none"
             />
           </View>
@@ -1126,7 +984,7 @@ export default function ResultScreen() {
           <ResultBody style={resultBodyStyle}>
             {/* Main Info */}
             <View style={styles.mainInfo}>
-            <Text style={styles.name}>{result.name}</Text>
+            <Text style={styles.name}>{formatPerfumeTitle(result.name, result.brand)}</Text>
 
             {isCollectionDetail && similarLoading && !livePriceStats && !result.priceRange && (
               <View style={styles.collectionLoadingRow}>
@@ -1239,42 +1097,39 @@ export default function ResultScreen() {
 
           </View>
 
-            {(similarLoading || similarListings.length > 0 || isCollectionDetail) && (
-            <View style={styles.similarSection}>
+            {(similarLoading || similarListings.length > 0) && (
+            <View style={[styles.similarSection, RESULT_SIMILAR_SECTION.section]}>
             <TouchableOpacity
-              style={styles.similarHeader}
+              style={[styles.similarHeader, RESULT_SIMILAR_SECTION.header]}
               activeOpacity={0.7}
               onPress={openAllSimilar}
             >
               <Text style={styles.similarTitle}>Similar Perfumes</Text>
               <Text style={styles.similarChevron}>{'>'}</Text>
             </TouchableOpacity>
-            <View style={styles.similarDivider} />
+            <View style={[styles.similarDivider, RESULT_SIMILAR_SECTION.divider]} />
             {similarLoading ? (
               <ActivityIndicator size="small" color={Colors.text} style={{ marginVertical: 20 }} />
             ) : (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.similarScroll}
+                contentContainerStyle={[styles.similarScroll, RESULT_SIMILAR_SECTION.scroll]}
               >
                 {similarListings.slice(0, 5).map((p, i) => (
-                  <SimilarProductCard
+                  <SimilarCardSmall
                     key={i}
                     perfume={p}
-                    variant="horizontal"
                     onPress={() => {
                       const title = `${p.brand || ''} ${p.name || ''}`.trim();
                       trackRetailerTap(p.retailer || 'unknown', title);
-                      WebBrowser.openBrowserAsync(openListingUrl(p), {
-                        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-                      });
+                      void openSimilarListing(p);
                     }}
                   />
                 ))}
                 {similarListings.length > 5 && (
                   <TouchableOpacity
-                    style={styles.viewAllCard}
+                    style={[styles.viewAllCard, RESULT_SIMILAR_SECTION.viewAll]}
                     activeOpacity={0.7}
                     onPress={openAllSimilar}
                   >
@@ -2127,12 +1982,12 @@ const styles = StyleSheet.create({
     right: 0,
     height: 80,
   },
-  resultHeroFade: {
+  resultHeroFadeBottom: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 120,
+    height: 48,
   },
   topShadow: {
     position: 'absolute',
@@ -2489,17 +2344,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     marginTop: -Spacing.sm,
   },
-  similarSection: {
-    marginTop: Spacing.lg,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: SIMILAR_GRID_PADDING,
-  },
-  similarHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
-  },
+  similarSection: {},
+  similarHeader: {},
   similarTitle: {
     fontSize: FontSizes.xl + 2,
     fontWeight: '800',
@@ -2510,23 +2356,9 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: Colors.textMuted,
   },
-  similarDivider: {
-    height: 1,
-    backgroundColor: 'rgba(200,148,60,0.2)',
-    marginBottom: Spacing.lg,
-  },
-  similarScroll: {
-    paddingRight: SIMILAR_GRID_PADDING,
-    gap: SIMILAR_GRID_GAP,
-    alignItems: 'flex-start',
-  },
-  viewAllCard: {
-    width: SIMILAR_CARD_WIDTH,
-    minHeight: getSimilarCardHeight(),
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
+  similarDivider: {},
+  similarScroll: {},
+  viewAllCard: {},
   viewAllText: {
     fontSize: FontSizes.sm,
     fontWeight: '700',

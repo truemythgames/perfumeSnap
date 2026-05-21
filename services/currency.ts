@@ -67,9 +67,14 @@ function getDeviceCurrency(): string {
 }
 
 let cachedCurrency: string | null = null;
+const currencyListeners = new Set<(code: string) => void>();
+
+export function subscribeToCurrencyChange(listener: (code: string) => void): () => void {
+  currencyListeners.add(listener);
+  return () => currencyListeners.delete(listener);
+}
 
 export async function getPreferredCurrency(): Promise<string> {
-  if (cachedCurrency) return cachedCurrency;
   try {
     const stored = await SecureStore.getItemAsync(CURRENCY_KEY);
     if (stored && CURRENCIES.some((c) => c.code === stored)) {
@@ -85,8 +90,49 @@ export async function getPreferredCurrency(): Promise<string> {
 export async function setPreferredCurrency(code: string): Promise<void> {
   cachedCurrency = code;
   await SecureStore.setItemAsync(CURRENCY_KEY, code);
+  currencyListeners.forEach((listener) => listener(code));
+}
+
+/** Sync read of last-known preferred currency (falls back to device locale). */
+export function getCachedPreferredCurrency(): string {
+  if (cachedCurrency) return cachedCurrency;
+  return getDeviceCurrency();
+}
+
+export function getCurrencySymbol(code: string): string {
+  return getCurrencyByCode(code)?.symbol ?? '$';
 }
 
 export function getCurrencyByCode(code: string): CurrencyOption | undefined {
   return CURRENCIES.find((c) => c.code === code);
+}
+
+const CURRENCY_TO_COUNTRY: Record<string, string> = {
+  USD: 'us',
+  EUR: 'de',
+  GBP: 'gb',
+  JPY: 'jp',
+  CAD: 'ca',
+  AUD: 'au',
+  CHF: 'ch',
+  CNY: 'cn',
+  KRW: 'kr',
+  INR: 'in',
+  BRL: 'br',
+  MXN: 'mx',
+  AED: 'ae',
+  SAR: 'sa',
+  SEK: 'se',
+  NOK: 'no',
+  DKK: 'dk',
+  PLN: 'pl',
+  TRY: 'tr',
+  SGD: 'sg',
+  HKD: 'hk',
+  NZD: 'nz',
+};
+
+/** Serper `gl` country code for shopping results matching preferred currency. */
+export function getCountryForCurrency(code: string): string {
+  return CURRENCY_TO_COUNTRY[code] || 'us';
 }

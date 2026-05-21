@@ -33,10 +33,14 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection, deleteFromCollection } from '../services/api';
-import { collectionPrefillKey, syncCollectionPrefillCache } from '../services/resultNavigationCache';
+import { collectionPrefillKey, setResultPrefill, syncCollectionPrefillCache } from '../services/resultNavigationCache';
 import { trackDeleteFromCollection, trackEvent } from '../services/analytics';
-import { FREE_LIMITS, getPremiumStatus } from '../services/access';
-import { getPreferredCurrency, getCurrencyByCode } from '../services/currency';
+import { usePremiumStatus } from '../hooks/usePremiumStatus';
+import { FREE_LIMITS } from '../services/access';
+import { getCurrencySymbol } from '../services/currency';
+import { convertFromUsd } from '../services/exchangeRates';
+import { usePreferredCurrency } from '../hooks/usePreferredCurrency';
+import { formatPriceValues } from '../utils/perfumePricing';
 
 const EDIT_ANIM_DURATION = 280;
 const CHECKBOX_ICON = 26;
@@ -71,7 +75,7 @@ function isLikelySampleOrDecant(name?: string, brand?: string): boolean {
   return false;
 }
 
-function computeLivePriceDisplay(item: CollectionItem): { display: string; midpoint: number } | null {
+function computeLivePriceDisplay(item: CollectionItem, currencyCode: string): { display: string; midpoint: number } | null {
   const listings = item.perfume.cachedSimilarListings || [];
   const prices = listings
     .filter((l) => !isLikelySampleOrDecant(l.name, l.brand))
@@ -95,8 +99,8 @@ function computeLivePriceDisplay(item: CollectionItem): { display: string; midpo
 
   const min = bounded[0];
   const max = bounded[bounded.length - 1];
-  const midpoint = (min + max) / 2;
-  const display = min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`;
+  const midpoint = convertFromUsd((min + max) / 2, currencyCode);
+  const display = formatPriceValues(min, max, currencyCode);
   return { display, midpoint };
 }
 
@@ -509,8 +513,9 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
-  const [currencySymbol, setCurrencySymbol] = useState('$');
+  const { isPremium } = usePremiumStatus();
+  const preferredCurrency = usePreferredCurrency();
+  const currencySymbol = getCurrencySymbol(preferredCurrency);
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [filter, setFilter] = useState<FilterState>(INITIAL_FILTER);
@@ -548,14 +553,6 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   useEffect(() => { load(true); }, [load]);
   useEffect(() => { router.prefetch('/collection-detail'); }, []);
   useEffect(() => { syncCollectionPrefillCache(items); }, [items]);
-  useEffect(() => { getPremiumStatus().then(setIsPremium); }, []);
-  useEffect(() => {
-    getPreferredCurrency().then((code) => {
-      const c = getCurrencyByCode(code);
-      if (c) setCurrencySymbol(c.symbol);
-    });
-  }, []);
-
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     load(false);
@@ -665,11 +662,11 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const stats = useMemo(() => {
     const brands = new Set(items.map((it) => it.perfume.brand).filter(Boolean));
     const midpoints = items
-      .map((it) => computeLivePriceDisplay(it)?.midpoint ?? null)
+      .map((it) => computeLivePriceDisplay(it, preferredCurrency)?.midpoint ?? null)
       .filter((v): v is number => v !== null);
     const totalValue = midpoints.reduce((sum, v) => sum + v, 0);
     return { count: items.length, brands: brands.size, totalValue };
-  }, [items]);
+  }, [items, preferredCurrency]);
 
   const allBrands = useMemo(
     () => [...new Set(items.map((it) => it.perfume.brand).filter(Boolean))].sort() as string[],
@@ -678,10 +675,10 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
   const collectionMaxPrice = useMemo(() => {
     const prices = items
-      .map((it) => computeLivePriceDisplay(it)?.midpoint ?? 0)
+      .map((it) => computeLivePriceDisplay(it, preferredCurrency)?.midpoint ?? 0)
       .filter((v) => v > 0);
-    return prices.length > 0 ? Math.max(...prices) : 500;
-  }, [items]);
+    return prices.length > 0 ? Math.max(...prices) : convertFromUsd(500, preferredCurrency);
+  }, [items, preferredCurrency]);
 
   const filteredItems = useMemo(() => {
     let result = items;
@@ -692,7 +689,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
     if (filter.priceMin !== null || filter.priceMax !== null) {
       result = result.filter((it) => {
-        const price = computeLivePriceDisplay(it)?.midpoint ?? null;
+        const price = computeLivePriceDisplay(it, preferredCurrency)?.midpoint ?? null;
         if (price === null) return false;
         if (filter.priceMin !== null && price < filter.priceMin) return false;
         if (filter.priceMax !== null && price > filter.priceMax) return false;
@@ -701,7 +698,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
     }
 
     return result;
-  }, [items, filter]);
+  }, [items, filter, preferredCurrency]);
 
   const sortedItems = useMemo(() => {
     const sorted = [...filteredItems];
@@ -718,20 +715,20 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
         return sorted.sort((a, b) => (a.perfume.brand || '').localeCompare(b.perfume.brand || ''));
       case 'priceHigh':
         return sorted.sort((a, b) => {
-          const pa = computeLivePriceDisplay(a)?.midpoint ?? 0;
-          const pb = computeLivePriceDisplay(b)?.midpoint ?? 0;
+          const pa = computeLivePriceDisplay(a, preferredCurrency)?.midpoint ?? 0;
+          const pb = computeLivePriceDisplay(b, preferredCurrency)?.midpoint ?? 0;
           return pb - pa;
         });
       case 'priceLow':
         return sorted.sort((a, b) => {
-          const pa = computeLivePriceDisplay(a)?.midpoint ?? 0;
-          const pb = computeLivePriceDisplay(b)?.midpoint ?? 0;
+          const pa = computeLivePriceDisplay(a, preferredCurrency)?.midpoint ?? 0;
+          const pb = computeLivePriceDisplay(b, preferredCurrency)?.midpoint ?? 0;
           return pa - pb;
         });
       default:
         return sorted;
     }
-  }, [filteredItems, sortBy]);
+  }, [filteredItems, sortBy, preferredCurrency]);
 
   const scrollY = useSharedValue(-ICON_BAR_HEIGHT);
   const scrollHandler = useAnimatedScrollHandler({
@@ -789,7 +786,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const renderHero = () => (
     <View style={styles.statsSection}>
       <View style={styles.valueWrap}>
-        <Text style={styles.valueCurrency}>$</Text>
+        <Text style={styles.valueCurrency}>{currencySymbol}</Text>
         <Text style={styles.valueAmount}>
           {stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </Text>
@@ -836,6 +833,11 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
 
   const openCollectionDetail = useCallback((item: CollectionItem) => {
     const key = collectionPrefillKey(item.id);
+    setResultPrefill(key, {
+      ...item.perfume,
+      imageUri: item.perfume.imageUri ?? null,
+      imageKey: item.perfume.imageKey ?? null,
+    });
     router.push({
       pathname: '/collection-detail',
       params: {
@@ -861,7 +863,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       );
     }
     const p = item.perfume;
-    const livePrice = computeLivePriceDisplay(item);
+    const livePrice = computeLivePriceDisplay(item, preferredCurrency);
     return (
       <Pressable
         style={({ pressed }) => [styles.card, pressed && !editing && { opacity: 0.85 }]}

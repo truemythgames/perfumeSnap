@@ -33,7 +33,11 @@ import { useArticles } from '../hooks/useArticles';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-export default function HomeTab() {
+type HomeTabProps = {
+  pressEnabled?: boolean;
+};
+
+export default function HomeTab({ pressEnabled = true }: HomeTabProps) {
   const apiReady = isApiConfigured();
   const insets = useSafeAreaInsets();
   const { articles } = useArticles();
@@ -152,6 +156,7 @@ export default function HomeTab() {
   };
 
   const openArticle = (id: string) => {
+    if (!pressEnabled) return;
     router.push({ pathname: '/article', params: { id } });
   };
 
@@ -185,6 +190,7 @@ export default function HomeTab() {
           style={styles.identifyButton}
           onPress={handleCamera}
           activeOpacity={0.85}
+          disabled={!pressEnabled}
         >
           <LinearGradient
             colors={[Colors.primary, Colors.primaryDark]}
@@ -233,6 +239,7 @@ export default function HomeTab() {
             <TouchableOpacity
               style={styles.articleCard}
               activeOpacity={0.7}
+              disabled={!pressEnabled}
               onPress={() => openArticle(article.id)}
             >
               {article.imageUrl ? (
@@ -273,7 +280,11 @@ export default function HomeTab() {
         <TouchableOpacity
           style={styles.readMore}
           activeOpacity={0.7}
-          onPress={() => router.push('/articles')}
+          disabled={!pressEnabled}
+          onPress={() => {
+            if (!pressEnabled) return;
+            router.push('/articles');
+          }}
         >
           <Text style={styles.readMoreText}>Read more</Text>
           <Ionicons name="arrow-forward" size={16} color={Colors.primary} />

@@ -18,7 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { deleteAccount } from '../services/api';
 import { clearAllLocalUserData } from '../services/localReset';
-import { isPremiumUser, restorePurchases } from '../services/subscription';
+import { usePremiumStatus } from '../hooks/usePremiumStatus';
+import { restorePurchases } from '../services/subscription';
 import { CURRENCIES, getPreferredCurrency, setPreferredCurrency, getCurrencyByCode, CurrencyOption } from '../services/currency';
 
 const APP_STORE_URL = Platform.select({
@@ -56,11 +57,10 @@ export default function SettingsScreen() {
   const [currency, setCurrency] = useState('USD');
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState('');
-  const [premium, setPremium] = useState(false);
+  const { isPremium: premium } = usePremiumStatus();
 
   useEffect(() => {
     getPreferredCurrency().then(setCurrency);
-    isPremiumUser().then(setPremium);
   }, []);
 
   const handleMembershipStatus = () => {
@@ -74,7 +74,6 @@ export default function SettingsScreen() {
   const handleRestore = async () => {
     const restored = await restorePurchases();
     if (restored) {
-      setPremium(true);
       Alert.alert('Restored', 'Your Premium membership has been restored.');
     } else {
       Alert.alert('No Purchase Found', 'We couldn\'t find an active subscription to restore.');

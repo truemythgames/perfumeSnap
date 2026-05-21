@@ -17,7 +17,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Purchases, { PurchasesPackage } from 'react-native-purchases';
 import { BorderRadius, Colors, FontSizes, Spacing } from '../constants/theme';
-import { getPaywallPackages } from '../services/subscription';
+import { getPaywallPackages, hasPremiumEntitlement, notifyPremiumStatusChanged } from '../services/subscription';
 import { getOrCreateUserId } from '../services/user';
 import { dismissPaywallForSession } from '../services/paywall';
 
@@ -110,8 +110,8 @@ export default function SalesScreen() {
     setIsPurchasing(true);
     try {
       const { customerInfo } = await Purchases.purchasePackage(pkg);
-      const premiumEntitlement = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? 'premium';
-      if (customerInfo.entitlements.active[premiumEntitlement]) {
+      if (hasPremiumEntitlement(customerInfo)) {
+        notifyPremiumStatusChanged(true);
         router.back();
       }
     } catch (error: any) {
@@ -125,8 +125,8 @@ export default function SalesScreen() {
   const handleRestorePurchases = async () => {
     try {
       const customerInfo = await Purchases.restorePurchases();
-      const premiumEntitlement = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? 'premium';
-      if (customerInfo.entitlements.active[premiumEntitlement]) {
+      if (hasPremiumEntitlement(customerInfo)) {
+        notifyPremiumStatusChanged(true);
         Alert.alert('Restored', 'Your premium access has been restored.');
         router.back();
       } else {

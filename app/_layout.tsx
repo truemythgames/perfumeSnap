@@ -14,6 +14,8 @@ import { getOrCreateUserId } from '../services/user';
 import { isPaywallDismissedForSession, dismissPaywallForSession } from '../services/paywall';
 import { ONBOARDING_KEY, subscribeToLocalAccountReset } from '../services/localReset';
 import OnboardingFlow from '../components/OnboardingFlow';
+import { getPreferredCurrency } from '../services/currency';
+import { prefetchExchangeRates } from '../services/exchangeRates';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -45,6 +47,8 @@ export default function RootLayout() {
   const navRef = useNavigationContainerRef();
 
   useEffect(() => {
+    getPreferredCurrency();
+    prefetchExchangeRates();
     SecureStore.getItemAsync(ONBOARDING_KEY)
       .then(async (val) => {
         const done = val === '1';
@@ -71,9 +75,17 @@ export default function RootLayout() {
           setAppReady(true);
         }
       })
-      .catch(() => setOnboardingDone(false))
-      .finally(() => SplashScreen.hideAsync());
+      .catch(() => setOnboardingDone(false));
   }, []);
+
+  useEffect(() => {
+    if (!appReady) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        SplashScreen.hideAsync().catch(() => {});
+      });
+    });
+  }, [appReady]);
 
   useEffect(() => {
     return subscribeToLocalAccountReset(() => {
@@ -130,7 +142,7 @@ export default function RootLayout() {
 
   if (!onboardingDone) {
     return (
-      <GestureHandlerRootView style={styles.root}>
+      <GestureHandlerRootView style={styles.onboardingRoot}>
         <OnboardingFlow onComplete={finishOnboarding} />
       </GestureHandlerRootView>
     );
@@ -212,4 +224,5 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  onboardingRoot: { flex: 1, backgroundColor: '#ffffff' },
 });

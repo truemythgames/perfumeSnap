@@ -149,6 +149,7 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				03D798157D9C10D3D329EBAF /* [CP] Embed Pods Frameworks */,
+				F4E8D2C61A9B4056789ABCDE /* Generate Prebuilt Framework dSYMs */,
 				06366C62E125CAAA0B6F5A5F /* [CP-User] [RNFB] Core Configuration */,
 				AD98F1A85CD078F493FD593F /* [CP-User] [RNFB] Crashlytics Configuration */,
 			);
@@ -348,6 +349,22 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-PerfumeSnap/Pods-PerfumeSnap-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		F4E8D2C61A9B4056789ABCDE /* Generate Prebuilt Framework dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate Prebuilt Framework dSYMs";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/scripts/generate-prebuilt-dsyms.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 		AD98F1A85CD078F493FD593F /* [CP-User] [RNFB] Crashlytics Configuration */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -410,7 +427,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = PerfumeSnap/PerfumeSnap.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = T8QBXL5U75;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -451,7 +468,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = PerfumeSnap/PerfumeSnap.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = T8QBXL5U75;
 				INFOPLIST_FILE = PerfumeSnap/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;

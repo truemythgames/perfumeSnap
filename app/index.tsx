@@ -45,6 +45,7 @@ export default function MainScreen() {
   const collectionRef = useRef<CollectionTabHandle>(null);
   const cameraAnchorRef = useRef<View>(null);
   const translateX = useSharedValue(-initialTab * SCREEN_WIDTH);
+  const activeTabSV = useSharedValue(initialTab);
   const insets = useSafeAreaInsets();
   const [showScanCoachmark, setShowScanCoachmark] = useState(false);
   const [coachmarkAnchor, setCoachmarkAnchor] = useState<CoachmarkAnchor | null>(null);
@@ -111,7 +112,12 @@ export default function MainScreen() {
     transform: [{ translateY: editOverlayTranslateY.value }],
   }));
 
+  useEffect(() => {
+    activeTabSV.value = activeTab;
+  }, [activeTab, activeTabSV]);
+
   const switchTab = (page: number) => {
+    activeTabSV.value = page;
     setActiveTab(page);
     trackTabSwitch(page === 0 ? 'home' : 'collection');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -119,16 +125,18 @@ export default function MainScreen() {
 
   const goToPage = (page: number) => {
     translateX.value = withSpring(-page * SCREEN_WIDTH, SPRING_CONFIG);
+    activeTabSV.value = page;
     if (page !== activeTab) switchTab(page);
   };
 
   const panGesture = Gesture.Pan()
-    .activeOffsetX([-20, 20])
-    .failOffsetY([-12, 12])
+    .minDistance(12)
+    .activeOffsetX([-24, 24])
+    .failOffsetY([-10, 10])
     .onUpdate((e) => {
-      const base = -activeTab * SCREEN_WIDTH;
+      const base = -activeTabSV.value * SCREEN_WIDTH;
       const next = base + e.translationX;
-      const min = -(1) * SCREEN_WIDTH;
+      const min = -SCREEN_WIDTH;
       const max = 0;
 
       if (next > max) {
@@ -146,11 +154,12 @@ export default function MainScreen() {
         Math.abs(displacement) > SWIPE_THRESHOLD ||
         Math.abs(velocity) > 600;
 
-      let targetPage = activeTab;
-      if (shouldSwipe && displacement < 0 && activeTab < 1) {
-        targetPage = activeTab + 1;
-      } else if (shouldSwipe && displacement > 0 && activeTab > 0) {
-        targetPage = activeTab - 1;
+      const currentTab = activeTabSV.value;
+      let targetPage = currentTab;
+      if (shouldSwipe && displacement < 0 && currentTab < 1) {
+        targetPage = currentTab + 1;
+      } else if (shouldSwipe && displacement > 0 && currentTab > 0) {
+        targetPage = currentTab - 1;
       }
 
       translateX.value = withSpring(
@@ -158,7 +167,8 @@ export default function MainScreen() {
         SPRING_CONFIG,
       );
 
-      if (targetPage !== activeTab) {
+      if (targetPage !== currentTab) {
+        activeTabSV.value = targetPage;
         runOnJS(switchTab)(targetPage);
       }
     });
@@ -194,7 +204,11 @@ export default function MainScreen() {
             <HomeTab />
           </View>
           <View style={styles.page}>
-            <CollectionTab ref={collectionRef} onEditStateChange={handleEditStateChange} onRequestExport={handleRequestExport} />
+            <CollectionTab
+              ref={collectionRef}
+              onEditStateChange={handleEditStateChange}
+              onRequestExport={handleRequestExport}
+            />
           </View>
         </Animated.View>
       </GestureDetector>

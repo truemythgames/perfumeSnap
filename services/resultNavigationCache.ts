@@ -1,4 +1,5 @@
 import type { PerfumeResult, SimilarPerfume } from './api';
+import { filterValidSimilarListings } from './listingUrls';
 
 export type ResultPrefillPayload = PerfumeResult & {
   imageUri?: string | null;
@@ -9,7 +10,13 @@ export type ResultPrefillPayload = PerfumeResult & {
 const cache = new Map<string, ResultPrefillPayload>();
 
 export function setResultPrefill(key: string, payload: ResultPrefillPayload): void {
-  cache.set(key, payload);
+  const cachedSimilarListings = payload.cachedSimilarListings
+    ? filterValidSimilarListings(payload.cachedSimilarListings)
+    : undefined;
+  cache.set(key, {
+    ...payload,
+    cachedSimilarListings,
+  });
 }
 
 export function getResultPrefill(key: string): ResultPrefillPayload | null {
@@ -33,10 +40,14 @@ export function syncCollectionPrefillCache(
   items: Array<{ id: string; perfume: ResultPrefillPayload }>,
 ): void {
   for (const item of items) {
+    const cachedSimilarListings = item.perfume.cachedSimilarListings
+      ? filterValidSimilarListings(item.perfume.cachedSimilarListings)
+      : undefined;
     cache.set(collectionPrefillKey(item.id), {
       ...item.perfume,
       imageUri: item.perfume.imageUri ?? null,
       imageKey: item.perfume.imageKey ?? null,
+      cachedSimilarListings,
     });
   }
 }

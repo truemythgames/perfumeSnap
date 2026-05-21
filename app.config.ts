@@ -37,6 +37,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       ],
     },
     bundleIdentifier: 'app.perfumeSnap',
+    buildNumber: '6',
     googleServicesFile: './GoogleService-Info.plist',
   },
   android: {

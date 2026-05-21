@@ -7,18 +7,16 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getSimilarListings } from '../services/api';
+import { getSimilarListings, openSimilarListing, hasValidSimilarListings, filterValidSimilarListings } from '../services/api';
 import { getResultPrefill } from '../services/resultNavigationCache';
 import { Colors, FontSizes, Spacing } from '../constants/theme';
 import { trackScreenView, trackRetailerTap } from '../services/analytics';
-import { getPremiumStatus } from '../services/access';
+import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import SimilarProductCard, {
   getListingTitle,
-  openListingUrl,
   splitIntoMasonryColumns,
   SIMILAR_GRID_PADDING,
   SIMILAR_GRID_GAP,
@@ -31,12 +29,10 @@ export default function SimilarScreen() {
 
   const [perfumes, setPerfumes] = useState<Awaited<ReturnType<typeof getSimilarListings>>>([]);
   const [loading, setLoading] = useState(true);
-  const [isPremium, setIsPremium] = useState(false);
-  const [premiumChecked, setPremiumChecked] = useState(false);
+  const { isPremium, checked: premiumChecked } = usePremiumStatus();
 
   useEffect(() => {
     trackScreenView('similar');
-    getPremiumStatus().then(setIsPremium).finally(() => setPremiumChecked(true));
   }, []);
 
   useEffect(() => {
@@ -47,8 +43,22 @@ export default function SimilarScreen() {
     }
 
     if (prefillKey) {
-      const cached = getResultPrefill(prefillKey)?.cachedSimilarListings ?? [];
-      setPerfumes(cached);
+      const prefill = getResultPrefill(prefillKey);
+      const cached = filterValidSimilarListings(prefill?.cachedSimilarListings ?? []);
+      if (cached.length > 0) setPerfumes(cached);
+      if (hasValidSimilarListings(cached)) {
+        setLoading(false);
+        return;
+      }
+      const name = prefill?.name || params.name;
+      const brand = prefill?.brand || params.brand || '';
+      if (name) {
+        getSimilarListings(name, brand).then((results) => {
+          if (results.length > 0) setPerfumes(filterValidSimilarListings(results));
+          setLoading(false);
+        });
+        return;
+      }
       setLoading(false);
       return;
     }
@@ -63,7 +73,7 @@ export default function SimilarScreen() {
     }
 
     getSimilarListings(name, brand).then((results) => {
-      setPerfumes(results);
+      setPerfumes(filterValidSimilarListings(results));
       setLoading(false);
     });
   }, [params.name, params.brand, prefillKey, premiumChecked, isPremium]);
@@ -73,9 +83,7 @@ export default function SimilarScreen() {
   const openListing = (perfume: (typeof perfumes)[0]) => {
     const title = getListingTitle(perfume);
     trackRetailerTap(perfume.retailer || 'unknown', title);
-    WebBrowser.openBrowserAsync(openListingUrl(perfume), {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-    });
+    void openSimilarListing(perfume);
   };
 
   return (
@@ -101,6 +109,10 @@ export default function SimilarScreen() {
           <TouchableOpacity style={styles.unlockButton} onPress={() => router.push('/sales')}>
             <Text style={styles.unlockButtonText}>Unlock Premium</Text>
           </TouchableOpacity>
+        </View>
+      ) : perfumes.length === 0 ? (
+        <View style={styles.loadingWrap}>
+          <Text style={styles.emptyText}>No direct product listings found right now.</Text>
         </View>
       ) : (
         <ScrollView
@@ -207,5 +219,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: FontSizes.sm,
+  },
+  emptyText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    textAlign: 'center',
   },
 });

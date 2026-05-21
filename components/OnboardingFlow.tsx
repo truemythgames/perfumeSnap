@@ -446,6 +446,10 @@ function SlidingCollectionRow({ card, index, progress, isLead }: SlidingCollecti
 export default function OnboardingFlow({ onComplete }: Props) {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
+  const [hasContinued, setHasContinued] = useState(false);
+  const stepRef = useRef(step);
+  const hasContinuedRef = useRef(false);
+  const splashHiddenRef = useRef(false);
   const [isImageTransitioning, setIsImageTransitioning] = useState(false);
   const [showFinalImage, setShowFinalImage] = useState(false);
   const [showWelcomeFrameIntro, setShowWelcomeFrameIntro] = useState(false);
@@ -514,8 +518,22 @@ export default function OnboardingFlow({ onComplete }: Props) {
     },
   );
 
+  useEffect(() => {
+    stepRef.current = step;
+  }, [step]);
+
+  useEffect(() => {
+    hasContinuedRef.current = hasContinued;
+  }, [hasContinued]);
+
   const onWelcomeLayout = useCallback(() => {
-    SplashScreen.hideAsync();
+    if (splashHiddenRef.current) return;
+    splashHiddenRef.current = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        SplashScreen.hideAsync().catch(() => {});
+      });
+    });
   }, []);
 
   useEffect(() => {
@@ -606,6 +624,8 @@ export default function OnboardingFlow({ onComplete }: Props) {
   });
 
   useEventListener(player, 'playToEnd', () => {
+    if (!hasContinuedRef.current || stepRef.current !== 1) return;
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     sharedImageProgress.value = 0;
     sharedImageVisible.value = 1;
@@ -641,11 +661,10 @@ export default function OnboardingFlow({ onComplete }: Props) {
   });
 
   useEffect(() => {
-    if (step === 1) {
-      player.currentTime = 0;
-      player.play();
-    }
-  }, [step]);
+    if (!hasContinued || step !== 1) return;
+    player.currentTime = 0;
+    player.play();
+  }, [hasContinued, step]);
 
   useEffect(() => {
     if (step !== 3) return;
@@ -1038,12 +1057,14 @@ export default function OnboardingFlow({ onComplete }: Props) {
   };
 
   const handleContinue = async () => {
+    if (hasContinued) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (Platform.OS === 'ios') {
       try {
         await requestTrackingPermissionsAsync();
       } catch {}
     }
+    setHasContinued(true);
     advanceTo(1);
   };
 
@@ -1242,6 +1263,8 @@ export default function OnboardingFlow({ onComplete }: Props) {
     <View style={st.root}>
       <StatusBar style={step === 0 ? 'dark' : 'light'} />
 
+      {hasContinued && (
+        <>
       {/* ── Step 1: Intro Video (auto) ── */}
       <Animated.View
         style={[st.layer, carouselFade]}
@@ -1575,10 +1598,13 @@ export default function OnboardingFlow({ onComplete }: Props) {
         </Animated.View>
       )}
 
+        </>
+      )}
+
       {/* ── Welcome Overlay (white, on top – matches native splash) ── */}
       <Animated.View
         style={[st.layer, st.welcomeBg, welcomeStyle]}
-        pointerEvents={step === 0 ? 'auto' : 'none'}
+        pointerEvents={!hasContinued || step === 0 ? 'auto' : 'none'}
         onLayout={onWelcomeLayout}
       >
         <Image
@@ -1624,7 +1650,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+  root: { flex: 1, backgroundColor: '#ffffff' },
   layer: { ...StyleSheet.absoluteFillObject },
   welcomeBg: { backgroundColor: '#ffffff' },
 
@@ -1634,7 +1660,7 @@ const st = StyleSheet.create({
     width: LOGO_SIZE,
     height: LOGO_SIZE,
     left: (SCREEN_WIDTH - LOGO_SIZE) / 2,
-    top: (SCREEN_HEIGHT - LOGO_SIZE) / 2 - 78,
+    top: (SCREEN_HEIGHT - LOGO_SIZE) / 2,
   },
   welcomeBottom: {
     position: 'absolute',
@@ -2147,16 +2173,20 @@ const st = StyleSheet.create({
   },
   loadingLines: {
     gap: 18,
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
+    width: '100%',
   },
   loadingLineRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   loadingLineText: {
+    flex: 1,
+    flexShrink: 1,
     color: 'rgba(255,255,255,0.7)',
     fontSize: FontSizes.md,
+    lineHeight: 22,
   },
   loadingContinueBtn: {
     backgroundColor: '#9a7b4f',

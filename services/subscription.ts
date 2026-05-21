@@ -12,6 +12,40 @@ const PREMIUM_ENTITLEMENT_ID = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID
 
 let isConfigured = false;
 let configuredAppUserId: string | null = null;
+let customerInfoListenerAdded = false;
+
+let cachedPremiumStatus: boolean | null = null;
+const premiumListeners = new Set<(isPremium: boolean) => void>();
+
+export function subscribeToPremiumChange(listener: (isPremium: boolean) => void): () => void {
+  premiumListeners.add(listener);
+  return () => premiumListeners.delete(listener);
+}
+
+export function getCachedPremiumStatus(): boolean {
+  return cachedPremiumStatus ?? false;
+}
+
+export function hasCachedPremiumStatus(): boolean {
+  return cachedPremiumStatus !== null;
+}
+
+export function notifyPremiumStatusChanged(isPremium: boolean): void {
+  cachedPremiumStatus = isPremium;
+  premiumListeners.forEach((listener) => listener(isPremium));
+}
+
+function setupCustomerInfoListener(): void {
+  if (customerInfoListenerAdded) return;
+  customerInfoListenerAdded = true;
+  Purchases.addCustomerInfoUpdateListener((customerInfo) => {
+    notifyPremiumStatusChanged(hasPremiumEntitlement(customerInfo));
+  });
+}
+
+export function hasPremiumEntitlement(customerInfo: CustomerInfo): boolean {
+  return Boolean(customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID]);
+}
 
 function getRevenueCatApiKey() {
   if (Platform.OS === 'ios') return IOS_REVENUECAT_API_KEY;
@@ -51,6 +85,7 @@ export async function initRevenueCat(appUserId?: string): Promise<boolean> {
       configuredAppUserId = null;
     }
     isConfigured = true;
+    setupCustomerInfoListener();
     return true;
   } catch (error) {
     console.warn('[PerfumeSnap] RevenueCat init failed:', error);
@@ -77,7 +112,9 @@ export async function isPremiumUser(appUserId?: string): Promise<boolean> {
   if (DEV_FORCE_FREE) return false;
   const customerInfo = await getCustomerInfo(appUserId);
   if (!customerInfo) return false;
-  return Boolean(customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID]);
+  const premium = hasPremiumEntitlement(customerInfo);
+  notifyPremiumStatusChanged(premium);
+  return premium;
 }
 
 export async function getCurrentOffering(appUserId?: string): Promise<PurchasesOffering | null> {
@@ -99,7 +136,9 @@ export async function restorePurchases(appUserId?: string): Promise<boolean> {
 
   try {
     const customerInfo = await Purchases.restorePurchases();
-    return Boolean(customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID]);
+    const premium = hasPremiumEntitlement(customerInfo);
+    notifyPremiumStatusChanged(premium);
+    return premium;
   } catch (error) {
     console.warn('[PerfumeSnap] Failed restoring purchases:', error);
     return false;

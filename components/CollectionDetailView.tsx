@@ -25,28 +25,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
 import * as Haptics from 'expo-haptics';
 import NoteChip from './NoteChip';
 import ResultFeedbackSheet from './ResultFeedbackSheet';
 import InfoRow from './InfoRow';
-import SimilarProductCard, {
-  openListingUrl,
-  SIMILAR_GRID_PADDING,
-  SIMILAR_GRID_GAP,
-  SIMILAR_CARD_WIDTH,
-  getSimilarCardHeight,
-} from './SimilarProductCard';
+import SimilarCardSmall, { RESULT_SIMILAR_SECTION } from './SimilarCardSmall';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
-import { PerfumeResult } from '../services/api';
+import { getSimilarListings, openSimilarListing, PerfumeResult, SimilarPerfume, hasValidSimilarListings, filterValidSimilarListings } from '../services/api';
 import { getResultPrefill } from '../services/resultNavigationCache';
 import { trackChatOpened, trackRetailerTap, trackScreenView, trackViewSimilar } from '../services/analytics';
 import {
   computeLivePriceStats,
-  DEFAULT_CURRENCY,
   formatPriceRange,
   splitCurrencyDisplay,
 } from '../utils/perfumePricing';
+import { formatPerfumeTitle } from '../utils/perfumeDisplay';
+import { usePreferredCurrency } from '../hooks/usePreferredCurrency';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const RESULT_HERO_ZONE_HEIGHT = SCREEN_WIDTH * 0.9;
@@ -76,15 +70,27 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
   );
 
   const displayImageUri = imageUri || prefill?.imageUri || undefined;
-  const similarListings = prefill?.cachedSimilarListings ?? [];
+  const [similarListings, setSimilarListings] = useState<SimilarPerfume[]>(
+    () => filterValidSimilarListings(prefill?.cachedSimilarListings ?? []),
+  );
   const [photoFullscreen, setPhotoFullscreen] = useState(false);
   const [feedbackMenuVisible, setFeedbackMenuVisible] = useState(false);
+  const preferredCurrency = usePreferredCurrency();
   const fullscreenTranslateY = useSharedValue(0);
   const fullscreenOpacity = useSharedValue(0);
 
   useEffect(() => {
     queueMicrotask(() => trackScreenView('collection_detail'));
   }, []);
+
+  useEffect(() => {
+    if (!result) return;
+    const cached = prefill?.cachedSimilarListings ?? similarListings;
+    if (hasValidSimilarListings(cached)) return;
+    getSimilarListings(result.name, result.brand).then((fresh) => {
+      if (fresh.length > 0) setSimilarListings(filterValidSimilarListings(fresh));
+    });
+  }, [result?.name, result?.brand, prefill?.cachedSimilarListings]);
 
   const openPhotoFullscreen = useCallback(() => {
     fullscreenTranslateY.value = 0;
@@ -164,18 +170,22 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
   });
 
   const livePriceStats = useMemo(
-    () => computeLivePriceStats(similarListings),
-    [similarListings],
+    () => computeLivePriceStats(similarListings, preferredCurrency),
+    [similarListings, preferredCurrency],
   );
 
   const openAllSimilar = useCallback(() => {
-    if (!result || similarListings.length === 0) return;
+    if (!result) return;
     trackViewSimilar(result.name);
     router.push({
       pathname: '/similar',
-      params: { prefillKey },
+      params: {
+        prefillKey,
+        name: result.name,
+        brand: result.brand,
+      },
     });
-  }, [result, prefillKey, similarListings.length]);
+  }, [result, prefillKey]);
 
   const openPerfumeChat = useCallback(() => {
     if (!result) return;
@@ -216,7 +226,7 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
 
   const displayedPrice = livePriceStats
     ? livePriceStats.display
-    : formatPriceRange(result.priceRange, DEFAULT_CURRENCY);
+    : formatPriceRange(result.priceRange, preferredCurrency);
   const splitPrice = splitCurrencyDisplay(displayedPrice);
   const perfumerValue = (result.perfumer || '').trim();
   const shouldShowPerfumer = Boolean(
@@ -268,11 +278,16 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
             </View>
           </Pressable>
           <LinearGradient colors={[Colors.surface, 'transparent']} style={styles.resultHeroFadeTop} pointerEvents="none" />
-          <LinearGradient colors={['transparent', Colors.background]} style={styles.resultHeroFade} pointerEvents="none" />
+          <LinearGradient
+            colors={['transparent', Colors.background]}
+            locations={[0.55, 1]}
+            style={styles.resultHeroFadeBottom}
+            pointerEvents="none"
+          />
         </View>
 
         <View style={styles.mainInfo}>
-          <Text style={styles.name}>{result.name}</Text>
+          <Text style={styles.name}>{formatPerfumeTitle(result.name, result.brand)}</Text>
           {(livePriceStats || result.priceRange) && (
             <View style={styles.priceCard}>
               <LinearGradient
@@ -302,35 +317,40 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
         </View>
 
         {similarListings.length > 0 && (
-          <View style={styles.similarSection}>
-            <TouchableOpacity style={styles.similarHeader} activeOpacity={0.7} onPress={openAllSimilar}>
+          <View style={[styles.similarSection, RESULT_SIMILAR_SECTION.section]}>
+            <TouchableOpacity
+              style={[styles.similarHeader, RESULT_SIMILAR_SECTION.header]}
+              activeOpacity={0.7}
+              onPress={openAllSimilar}
+            >
               <Text style={styles.similarTitle}>Similar Perfumes</Text>
               <Text style={styles.similarChevron}>{'>'}</Text>
             </TouchableOpacity>
-            <View style={styles.similarDivider} />
+            <View style={[styles.similarDivider, RESULT_SIMILAR_SECTION.divider]} />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.similarScroll}
+              contentContainerStyle={[styles.similarScroll, RESULT_SIMILAR_SECTION.scroll]}
               nestedScrollEnabled
               directionalLockEnabled
             >
               {similarListings.slice(0, 5).map((p, i) => (
-                <SimilarProductCard
+                <SimilarCardSmall
                   key={i}
                   perfume={p}
-                  variant="horizontal"
-                  onPress={() => {
-                    const title = `${p.brand || ''} ${p.name || ''}`.trim();
-                    trackRetailerTap(p.retailer || 'unknown', title);
-                    WebBrowser.openBrowserAsync(openListingUrl(p), {
-                      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-                    });
-                  }}
+                    onPress={() => {
+                      const title = `${p.brand || ''} ${p.name || ''}`.trim();
+                      trackRetailerTap(p.retailer || 'unknown', title);
+                      void openSimilarListing(p);
+                    }}
                 />
               ))}
               {similarListings.length > 5 && (
-                <TouchableOpacity style={styles.viewAllCard} activeOpacity={0.7} onPress={openAllSimilar}>
+                <TouchableOpacity
+                  style={[styles.viewAllCard, RESULT_SIMILAR_SECTION.viewAll]}
+                  activeOpacity={0.7}
+                  onPress={openAllSimilar}
+                >
                   <Ionicons name="arrow-forward-circle-outline" size={32} color={Colors.primary} />
                   <Text style={styles.viewAllText}>View All</Text>
                 </TouchableOpacity>
@@ -578,7 +598,7 @@ const styles = StyleSheet.create({
   resultFrameImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   resultFramePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.surface },
   resultHeroFadeTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 80 },
-  resultHeroFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 120 },
+  resultHeroFadeBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 48 },
   resultBackRow: {
     position: 'absolute',
     top: 0,
@@ -619,13 +639,13 @@ const styles = StyleSheet.create({
   priceCardDivider: { width: '60%', height: 1, backgroundColor: '#c8943c50', marginVertical: Spacing.sm + 2 },
   priceCardGrading: { fontSize: FontSizes.md, color: '#5a4a32', fontWeight: '500' },
   priceCardGradingValue: { fontWeight: '800', color: '#2a1f0e' },
-  similarSection: { marginTop: Spacing.lg, paddingVertical: Spacing.lg, paddingHorizontal: SIMILAR_GRID_PADDING },
-  similarHeader: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm, marginBottom: Spacing.sm },
+  similarSection: {},
+  similarHeader: {},
   similarTitle: { fontSize: FontSizes.xl + 2, fontWeight: '800', color: Colors.text },
   similarChevron: { fontSize: FontSizes.xl, fontWeight: '400', color: Colors.textMuted },
-  similarDivider: { height: 1, backgroundColor: 'rgba(200,148,60,0.2)', marginBottom: Spacing.lg },
-  similarScroll: { paddingRight: SIMILAR_GRID_PADDING, gap: SIMILAR_GRID_GAP },
-  viewAllCard: { width: SIMILAR_CARD_WIDTH, minHeight: getSimilarCardHeight(), justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
+  similarDivider: {},
+  similarScroll: {},
+  viewAllCard: {},
   viewAllText: { fontSize: FontSizes.sm, fontWeight: '700', color: Colors.primary },
   section: { paddingHorizontal: Spacing.lg, marginTop: Spacing.xl },
   sectionTitle: { fontSize: FontSizes.xl, fontWeight: '700', color: Colors.textSecondary, marginBottom: Spacing.md },

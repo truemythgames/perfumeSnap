@@ -59,8 +59,10 @@ type RowConfig = {
 };
 
 const ROWS: RowConfig[] = [
-  { key: 'like', label: 'I Like These Features', icon: 'heart-outline' },
+  { key: 'accurate', label: 'Satisfied With Result', icon: 'checkmark-circle-outline' },
+  { key: 'pricing', label: 'Accurate Pricing', icon: 'pricetag-outline' },
   { key: 'incorrect', label: 'Incorrect Identification', icon: 'scan-outline', showChevron: true },
+  { key: 'like', label: 'I Like These Features', icon: 'heart-outline' },
   { key: 'feature', label: 'Feature Requests', icon: 'grid-outline', showChevron: true },
   { key: 'suggestion', label: 'More Suggestions', icon: 'chatbubble-outline', showChevron: true },
 ];
@@ -207,13 +209,18 @@ export default function ResultFeedbackSheet({
     transform: [{ translateX: slideX.value }],
   }));
 
-  const handleLike = useCallback(async () => {
+  const handleQuickTap = useCallback(async (category: FeedbackCategory) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    trackResultFeedback(true, perfumeName, perfumeBrand);
-    const ok = await submitFeedback(perfumeName, perfumeBrand, 'like');
+    trackResultFeedback(category !== 'incorrect', perfumeName, perfumeBrand);
+    const ok = await submitFeedback(perfumeName, perfumeBrand, category);
     dismiss();
     if (ok) {
-      Alert.alert('Thank you!', 'Glad you’re enjoying PerfumeSnap.');
+      const msg = category === 'accurate'
+        ? 'Happy to hear the result was spot on!'
+        : category === 'pricing'
+        ? 'Good to know the pricing was accurate!'
+        : 'Glad you are enjoying PerfumeSnap.';
+      Alert.alert('Thank you!', msg);
     } else {
       Alert.alert('Could not send feedback', 'Check your connection and try again.');
     }
@@ -239,13 +246,13 @@ export default function ResultFeedbackSheet({
 
   const handleRow = useCallback(
     (action: FeedbackCategory) => {
-      if (action === 'like') {
-        void handleLike();
+      if (action === 'accurate' || action === 'pricing' || action === 'like') {
+        void handleQuickTap(action);
         return;
       }
       openForm(action);
     },
-    [handleLike, openForm],
+    [handleQuickTap, openForm],
   );
 
   return (

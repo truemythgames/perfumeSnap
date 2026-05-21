@@ -1,4 +1,7 @@
 import { getOrCreateUserId } from './user';
+import { getPreferredCurrency, getCountryForCurrency } from './currency';
+import { buildSimilarSearchTerms } from '../utils/perfumePricing';
+import { filterValidSimilarListings } from './listingUrls';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8787';
 
@@ -73,47 +76,16 @@ export interface PerfumeChatMessage {
   content: string;
 }
 
-export function isGoogleListingUrl(url?: string | null): boolean {
-  if (!url) return false;
-  try {
-    return new URL(url).hostname.toLowerCase().includes('google.');
-  } catch {
-    return false;
-  }
-}
-
-export function buildShoppingUrl(perfumeName: string, brand: string, retailer?: string): string {
-  const query = encodeURIComponent(`${brand} ${perfumeName} perfume`.trim());
-  const key = (retailer || '').toLowerCase().replace(/[^a-z]/g, '');
-
-  if (key.includes('amazon')) return `https://www.amazon.com/s?k=${query}`;
-  if (key.includes('ebay')) return `https://www.ebay.com/sch/i.html?_nkw=${query}`;
-  if (key.includes('sephora')) return `https://www.sephora.com/search?keyword=${query}`;
-  if (key.includes('nordstrom')) return `https://www.nordstrom.com/sr?keyword=${query}`;
-  if (key.includes('ulta')) return `https://www.ulta.com/ulta/a/_/Ntt-${query}`;
-  if (key.includes('walmart')) return `https://www.walmart.com/search?q=${query}`;
-  if (key.includes('fragrancenet')) return `https://www.fragrancenet.com/search?search=${query}`;
-  if (key.includes('fragrancex')) return `https://www.fragrancex.com/search?search=${query}`;
-  if (key.includes('perfumania')) return `https://www.perfumania.com/search?q=${query}`;
-  if (key.includes('bloomingdale')) return `https://www.bloomingdales.com/shop/search?keyword=${query}`;
-  if (key.includes('macy') || key.includes('macys')) return `https://www.macys.com/shop/search?keyword=${query}`;
-  if (key.includes('neimanmarcus') || key.includes('neiman')) return `https://www.neimanmarcus.com/en-us/search?q=${query}`;
-  if (key.includes('luckyscent')) return `https://www.luckyscent.com/search.asp?keyword=${query}`;
-  if (key.includes('notino')) return `https://www.notino.com/search/?q=${query}`;
-  if (key.includes('douglas')) return `https://www.douglas.com/search?q=${query}`;
-  if (key.includes('harrods')) return `https://www.harrods.com/en-us/search?searchTerm=${query}`;
-  if (key.includes('theperfumeshop') || key.includes('perfumeshop')) return `https://www.theperfumeshop.com/search?q=${query}`;
-  if (key.includes('target')) return `https://www.target.com/s?searchTerm=${query}`;
-
-  return `https://www.amazon.com/s?k=${query}`;
-}
-
-/** Prefer a direct retailer URL; never open Google Shopping. */
-export function resolveListingUrl(perfume: SimilarPerfume): string {
-  const direct = perfume.productUrl?.trim();
-  if (direct && !isGoogleListingUrl(direct)) return direct;
-  return buildShoppingUrl(perfume.name, perfume.brand, perfume.retailer);
-}
+export {
+  filterValidSimilarListings,
+  hasValidSimilarListings,
+  isDirectProductUrl,
+  isGoogleListingUrl,
+  isSearchListingUrl,
+  openSimilarListing,
+  resolveListingUrl,
+  unwrapListingUrl,
+} from './listingUrls';
 
 export function normalizeSimilarPerfumes(raw: SimilarPerfume[] | string[]): SimilarPerfume[] {
   if (!raw || raw.length === 0) return [];
@@ -244,7 +216,7 @@ export async function lookupPerfume(name: string, brand: string, externalSignal?
   }
 }
 
-export type FeedbackCategory = 'like' | 'incorrect' | 'feature' | 'suggestion';
+export type FeedbackCategory = 'accurate' | 'pricing' | 'like' | 'incorrect' | 'feature' | 'suggestion';
 
 export async function submitFeedback(
   perfumeName: string,
@@ -256,7 +228,7 @@ export async function submitFeedback(
   const name = perfumeName?.trim() || 'Unknown';
   const brand = perfumeBrand?.trim() || 'Unknown';
   const text = message?.trim() || '';
-  const satisfied = category === 'like' ? true : category === 'incorrect' ? false : true;
+  const satisfied = category === 'incorrect' ? false : true;
 
   const post = (body: Record<string, unknown>) =>
     fetch(`${API_URL}/feedback`, {
@@ -347,6 +319,9 @@ export async function addToCollection(
   opts: { imageKey?: string; imageUri?: string; similarListings?: SimilarPerfume[] } = {},
 ): Promise<{ id: string; createdAt: number; imageUri: string | null }> {
   const userId = await getOrCreateUserId();
+  const similarListings = opts.similarListings
+    ? filterValidSimilarListings(opts.similarListings)
+    : undefined;
   const res = await fetch(`${API_URL}/collection`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
@@ -354,7 +329,7 @@ export async function addToCollection(
       perfume,
       imageKey: opts.imageKey,
       imageUri: opts.imageUri,
-      similarListings: opts.similarListings,
+      similarListings,
     }),
   });
   if (!res.ok) throw new Error(`Failed to save to collection (${res.status})`);
@@ -384,11 +359,13 @@ export async function getSimilarListings(name: string, brand: string): Promise<S
     const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
     const localeParts = locale.replace('_', '-').split('-');
     const language = (localeParts[0] || 'en').toLowerCase();
-    const country = (localeParts[1] || 'US').toLowerCase();
+    const preferredCurrency = await getPreferredCurrency();
+    const country = getCountryForCurrency(preferredCurrency);
+    const terms = buildSimilarSearchTerms(name, brand);
 
-    const q = encodeURIComponent(`${brand} ${name} perfume`.trim());
-    const n = encodeURIComponent(name.trim());
-    const b = encodeURIComponent(brand.trim());
+    const q = encodeURIComponent(`${terms.query} perfume`.trim());
+    const n = encodeURIComponent(terms.name.trim());
+    const b = encodeURIComponent(terms.brand.trim());
     const c = encodeURIComponent(country);
     const hl = encodeURIComponent(language);
     const url = `${API_URL}/similar?q=${q}&name=${n}&brand=${b}&country=${c}&hl=${hl}`;
@@ -399,8 +376,9 @@ export async function getSimilarListings(name: string, brand: string): Promise<S
       return [];
     }
     const data = (await res.json()) as { results?: SimilarPerfume[] };
-    console.log('[PerfumeSnap] Similar results:', data.results?.length ?? 0);
-    return data.results || [];
+    const filtered = filterValidSimilarListings(data.results || []);
+    console.log('[PerfumeSnap] Similar results:', filtered.length);
+    return filtered;
   } catch (err) {
     console.error('[PerfumeSnap] getSimilarListings error:', err);
     return [];

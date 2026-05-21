@@ -23,25 +23,25 @@ const CARD_BODY_HEIGHT = 46;
 const CARD_BG = '#ebe3d4';
 const IMAGE_BG = '#ffffff';
 
-const BADGE_MAP: Record<string, string> = {
+const MAJOR_RETAILER_BADGES: Record<string, string> = {
   amazon: 'Amazon',
   ebay: 'eBay',
   walmart: 'Walmart',
   sephora: 'Sephora',
+  ulta: 'Ulta',
+  target: 'Target',
+  fragrancenet: 'FragranceNet',
   nordstrom: 'Nordstrom',
   macys: "Macy's",
-  fragrancenet: 'FragranceNet',
 };
 
 export function getRetailerBadgeLabel(retailer?: string): string | null {
   if (!retailer) return null;
   const key = retailer.toLowerCase();
-  for (const [match, label] of Object.entries(BADGE_MAP)) {
+  for (const [match, label] of Object.entries(MAJOR_RETAILER_BADGES)) {
     if (key.includes(match)) return label;
   }
-  const clean = retailer.split('|')[0].split('-')[0].trim();
-  if (!clean) return null;
-  return clean.length > 14 ? `${clean.slice(0, 14)}…` : clean;
+  return null;
 }
 
 export function getListingTitle(perfume: SimilarPerfume): string {
@@ -140,6 +140,7 @@ export default function SimilarProductCard({
   const title = getListingTitle(perfume);
   const badge = getRetailerBadgeLabel(perfume.retailer);
   const isHorizontal = variant === 'horizontal';
+  const hasLink = Boolean(resolveListingUrl(perfume));
 
   const applyAspect = useCallback((w: number, h: number) => {
     setImageHeight(imageHeightFromAspect(w, h, masonryIndex));
@@ -170,6 +171,8 @@ export default function SimilarProductCard({
     },
     [applyAspect],
   );
+
+  if (!hasLink) return null;
 
   return (
     <TouchableOpacity
@@ -210,7 +213,7 @@ export default function SimilarProductCard({
   );
 }
 
-export function openListingUrl(perfume: SimilarPerfume): string {
+export function openListingUrl(perfume: SimilarPerfume): string | null {
   return resolveListingUrl(perfume);
 }
 

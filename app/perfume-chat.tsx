@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BorderRadius, Colors, FontSizes, Spacing } from '../constants/theme';
 import { chatAboutPerfume, PerfumeChatMessage, PerfumeResult } from '../services/api';
 import { trackScreenView, trackChatMessageSent } from '../services/analytics';
-import { getPremiumStatus } from '../services/access';
+import { usePremiumStatus } from '../hooks/usePremiumStatus';
 
 type ChatRow = {
   id: string;
@@ -31,8 +31,7 @@ export default function PerfumeChatScreen() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isPremium, setIsPremium] = useState(false);
-  const [premiumChecked, setPremiumChecked] = useState(false);
+  const { isPremium, checked: premiumChecked } = usePremiumStatus();
 
   const perfume = useMemo<PerfumeResult | null>(() => {
     if (!params.perfume || Array.isArray(params.perfume)) return null;
@@ -58,7 +57,6 @@ export default function PerfumeChatScreen() {
 
   useEffect(() => {
     trackScreenView('perfume_chat');
-    getPremiumStatus().then(setIsPremium).finally(() => setPremiumChecked(true));
   }, []);
 
   const canSend = Boolean(input.trim()) && !sending && Boolean(perfume);

@@ -6,7 +6,6 @@ interface Env {
   /** @deprecated use SERPER_API_KEY — kept for existing Cloudflare secret */
   PRICES_API_KEY?: string;
   REPLICATE_API_KEY?: string;
-  ADMIN_KEY?: string;
   RESEND_API_KEY?: string;
 }
 
@@ -289,7 +288,7 @@ CRITICAL RULES:
 - ALWAYS set "identified" to true. NEVER set it to false. No exceptions.
 - You MUST always return a complete, filled-out response no matter what is in the image.
 - Even from partial labels, side angles, blurry photos, or just a bottle silhouette — you MUST identify it. Use every visual clue available.
-- The "name" field MUST be the full commercial fragrance name including line/flanker and concentration when distinguishable. Example: "Dior Sauvage Elixir", not just "Sauvage".
+- The "name" field MUST be ONLY the fragrance line name — no brand prefix, no concentration, no bottle color/material, no packaging description. Put the brand in "brand" and concentration in "concentration". Good name: "Ombré Leather". Bad name: "Tom Ford Ombré Leather Eau de Parfum in matte black bottle".
 - If you see partial text, reconstruct the full name from what's visible combined with your knowledge of existing products.
 - If you can only identify the brand but not the exact fragrance, pick the brand's fragrance that BEST matches the bottle design, color, and any visible text.
 - If the image does NOT show a perfume (e.g. a beer, a shoe, food, anything): still set "identified" to true, identify the product/object as best you can, and adapt all fields creatively. The user should always get a fun, useful result.
@@ -350,6 +349,26 @@ Respond ONLY with valid JSON in this exact format (no markdown, no code fences):
 IMPORTANT: Do NOT include a "similarPerfumes" field. Only return the fields shown above. Similar shopping results are fetched separately.
 
 Remember: you NEVER fail. You NEVER return "Unknown" or "identified: false". You always give a complete, confident answer.`;
+
+function normalizePerfumeIdentity(parsed: Record<string, unknown>): Record<string, unknown> {
+  let name = typeof parsed.name === 'string' ? parsed.name.trim() : '';
+  let brand = typeof parsed.brand === 'string' ? parsed.brand.trim() : '';
+
+  if (brand && name.toLowerCase().startsWith(brand.toLowerCase())) {
+    name = name.slice(brand.length).trim();
+  }
+
+  name = name.replace(/\s+in\s+.+$/i, '').trim();
+  name = name.replace(/\s+(eau de parfum|eau de toilette|eau de cologne|extrait de parfum|extrait|parfum|cologne|\bedp\b|\bedt\b|\bedc\b)(?:\s|$).*$/i, '').trim();
+  name = name.replace(/\s+(bottle|packaging|box|matte|glossy|spray|refill|refillable)\b.*$/i, '').trim();
+  name = name.replace(/^[-–—:,]+|[-–—:,]+$/g, '').trim();
+
+  parsed.name = name || (typeof parsed.name === 'string' ? parsed.name.trim() : '');
+  parsed.brand = brand;
+  parsed.priceRange = '';
+  delete parsed.similarPerfumes;
+  return parsed;
+}
 
 const PERFUME_CHAT_SYSTEM_PROMPT = `You are PerfumeSnap's perfume expert chat assistant.
 
@@ -483,11 +502,6 @@ export default {
         return await handleSubmitFeedback(request, env);
       }
 
-      // ---- Admin routes (password-protected) ----
-      if (url.pathname.startsWith('/admin')) {
-        return await handleAdmin(request, url, env);
-      }
-
     return jsonResponse({ error: 'Not found' }, 404);
     } catch (err: any) {
       console.error('Unhandled error:', err);
@@ -569,7 +583,7 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
     return jsonResponse({ error: 'AI response was not valid JSON', snippet: cleaned.slice(0, 200) }, 502);
   }
 
-  return jsonResponse(parsed);
+  return jsonResponse(normalizePerfumeIdentity(parsed));
 }
 
 async function handleLookup(request: Request, env: Env): Promise<Response> {
@@ -602,7 +616,7 @@ async function handleLookup(request: Request, env: Env): Promise<Response> {
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: `Provide detailed and comprehensive information about this perfume: "${query}". Include accurate current pricing, layering suggestions, affordable alternatives (dupes), and popularity status. Respond with the same JSON format as if you had identified it from a photo.`,
+          content: `Provide detailed and comprehensive information about this perfume: "${query}". Include layering suggestions, affordable alternatives (dupes), and popularity status. Do NOT include prices — live retailer pricing is fetched separately. Respond with the same JSON format as if you had identified it from a photo.`,
         },
       ],
       max_tokens: 3000,
@@ -625,7 +639,7 @@ async function handleLookup(request: Request, env: Env): Promise<Response> {
 
     const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   try {
-    return jsonResponse(JSON.parse(cleaned));
+    return jsonResponse(normalizePerfumeIdentity(JSON.parse(cleaned) as Record<string, unknown>));
   } catch {
     return jsonResponse({ error: 'AI response was not valid JSON' }, 502);
   }
@@ -896,7 +910,8 @@ async function handleAddToCollection(request: Request, env: Env): Promise<Respon
       const name = typeof r.name === 'string' ? r.name : '';
       const brand = typeof r.brand === 'string' ? r.brand : '';
       const retailer = typeof r.retailer === 'string' ? r.retailer : undefined;
-      const productUrl = resolveProductUrl(rawUrl, name, brand, retailer);
+      const productUrl = finalizeProductUrl(rawUrl);
+      if (!productUrl) continue;
       out.push({
         name,
         brand,
@@ -1127,6 +1142,35 @@ async function serperRequest(
   });
 }
 
+function unwrapListingUrl(url: string): string {
+  try {
+    let current = url.trim();
+    for (let depth = 0; depth < 4; depth += 1) {
+      const parsed = new URL(current);
+      const host = parsed.hostname.toLowerCase();
+      if (
+        host.includes('google.')
+        || host.includes('googleadservices.')
+        || host.includes('doubleclick.')
+      ) {
+        const next =
+          parsed.searchParams.get('q')
+          || parsed.searchParams.get('url')
+          || parsed.searchParams.get('adurl')
+          || parsed.searchParams.get('u');
+        if (next && /^https?:\/\//i.test(next)) {
+          current = decodeURIComponent(next);
+          continue;
+        }
+      }
+      break;
+    }
+    return current;
+  } catch {
+    return url;
+  }
+}
+
 function isGoogleListingUrl(url?: string | null): boolean {
   if (!url) return false;
   try {
@@ -1149,21 +1193,88 @@ function buildRetailerSearchUrl(name: string, brand: string, retailer?: string):
   return `https://www.amazon.com/s?k=${query}`;
 }
 
+function isSearchUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.toLowerCase();
+    const qs = u.search.toLowerCase();
+    if (path.includes('/search')) return true;
+    if (path.includes('/sch/') || path.includes('/sch/i.html')) return true;
+    if (qs.includes('_nkw=') || qs.includes('keyword=') || qs.includes('searchterm=')) return true;
+    if (u.hostname.includes('amazon.') && path === '/s') return true;
+    if (u.hostname.includes('walmart.') && path.startsWith('/search')) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function isLikelyProductUrl(link: string): boolean {
+  const normalized = unwrapListingUrl(link);
+  try {
+    const u = new URL(normalized);
+    const host = u.hostname.toLowerCase();
+    if (host.includes('google.')) return false;
+    const path = u.pathname.toLowerCase();
+
+    if (host.includes('amazon.')) return path.includes('/dp/') || path.includes('/gp/product/');
+    if (host.includes('ebay.')) return path.includes('/itm/') || /\/p\/\d+/.test(path);
+    if (host.includes('walmart.')) return path.includes('/ip/');
+    if (host.includes('sephora.')) return path.includes('/product/');
+    if (host.includes('ulta.')) return path.includes('/product/') || path.includes('/p/');
+    if (host.includes('fragrancenet.')) return path.includes('/products/') || path.includes('/fragrances/');
+    if (host.includes('nordstrom.')) return path.includes('/s/');
+    if (host.includes('macys.')) return path.includes('/shop/product/');
+    if (host.includes('target.')) return path.includes('/p/');
+    if (host.includes('notino.') || host.includes('douglas.')) return !path.includes('/search');
+
+    if (path.includes('/search') || path === '/s' || path === '/shop' || path.endsWith('/category')) return false;
+    if (/\/(\d{5,}|[a-f0-9-]{8,})(?:\/|$|\?)/i.test(path)) return true;
+    if (/\/(?:product|products|p|item|items|dp|ip|fragrance|perfumes|perfume|shop|buy|sku|listing)\/[^/?#]{3,}/i.test(path)) return true;
+    const blocked = new Set([
+      'search', 'category', 'categories', 'collections', 'collection',
+      'shop', 'catalog', 'blog', 'pages', 'cart', 'account', 'login', 'register',
+    ]);
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length >= 2) {
+      const first = segments[0].toLowerCase();
+      const last = segments[segments.length - 1].toLowerCase();
+      if (blocked.has(first) || blocked.has(last)) return false;
+      if (last.length >= 3) return true;
+    }
+    if (segments.length === 1) {
+      const seg = segments[0].toLowerCase();
+      if (blocked.has(seg) || seg.length < 4) return false;
+      if (/\.html?$/.test(seg) || seg.includes('-')) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function finalizeProductUrl(url: string | null | undefined): string | null {
+  const trimmed = url?.trim();
+  if (!trimmed) return null;
+  const unwrapped = unwrapListingUrl(trimmed);
+  if (isGoogleListingUrl(unwrapped) || isSearchUrl(unwrapped)) return null;
+  if (!isLikelyProductUrl(unwrapped)) return null;
+  return unwrapped;
+}
+
 function resolveProductUrl(
   url: string | null | undefined,
   name: string,
   brand: string,
   retailer?: string,
 ): string {
-  const trimmed = url?.trim();
-  if (trimmed && !isGoogleListingUrl(trimmed)) return trimmed;
-  return buildRetailerSearchUrl(name, brand, retailer);
+  return finalizeProductUrl(url) || buildRetailerSearchUrl(name, brand, retailer);
 }
 
 function pickSerperProductLink(s: SerperShopRaw): string | undefined {
   for (const candidate of [s.source_link, s.vendor_link, s.product_link, s.link]) {
-    if (!candidate || isGoogleListingUrl(candidate)) continue;
-    return candidate;
+    const final = finalizeProductUrl(candidate);
+    if (final) return final;
   }
   return undefined;
 }
@@ -1211,7 +1322,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   const gl = /^[a-z]{2}$/.test(countryParam) ? countryParam : 'us';
   const hl = /^[a-z]{2}$/.test(hlParam) ? hlParam : 'en';
 
-  const cacheKey = `v10:serper:${gl}:${hl}:${q.toLowerCase().trim()}`;
+  const cacheKey = `v16:serper:${gl}:${hl}:${q.toLowerCase().trim()}`;
   const noCache = url.searchParams.get('nocache') === '1';
 
   if (!noCache) {
@@ -1257,10 +1368,23 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     c.aliases.some((a) => nameHint.includes(a)),
   );
 
-  function titleLooksRelevant(title: string): boolean {
+  function titleLooksRelevant(title: string, link?: string): boolean {
     const t = normalizeText(title);
     if (!t) return false;
-    if (hasJunkProductWords(t)) return false;
+
+    let isMarketplace = false;
+    if (link) {
+      try {
+        const host = new URL(link).hostname.toLowerCase();
+        isMarketplace = host.includes('amazon.') || host.includes('ebay.');
+      } catch {}
+    }
+
+    if (isMarketplace) {
+      if (/\b(decant|vial|travel spray|atomizer|mini\b|sample|body lotion|body wash|gift set)\b/i.test(t)) return false;
+    } else if (hasJunkProductWords(t)) {
+      return false;
+    }
 
     if (brandTokens.length > 0 && !brandTokens.some((bt) => t.includes(bt))) return false;
 
@@ -1277,18 +1401,30 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     return true;
   }
 
+  function amazonSiteForCountry(countryGl: string): string {
+    const sites: Record<string, string> = {
+      us: 'amazon.com', ca: 'amazon.ca', au: 'amazon.com.au', in: 'amazon.in',
+      gb: 'amazon.co.uk', uk: 'amazon.co.uk',
+      de: 'amazon.de', fr: 'amazon.fr', it: 'amazon.it', es: 'amazon.es', nl: 'amazon.nl',
+      jp: 'amazon.co.jp', mx: 'amazon.com.mx', br: 'amazon.com.br', se: 'amazon.se',
+      pl: 'amazon.pl', be: 'amazon.com.be', sg: 'amazon.sg', ae: 'amazon.ae',
+    };
+    return sites[countryGl.toLowerCase()] || 'amazon.com';
+  }
+
+  const amazonSite = amazonSiteForCountry(gl);
   const organicQueries = [
-    `${q} where to buy`,
-    `${q} site:amazon.com`,
+    `${q} site:${amazonSite}`,
     `${q} site:ebay.com`,
-    `${q} (site:walmart.com OR site:sephora.com OR site:ulta.com OR site:nordstrom.com OR site:macys.com OR site:fragrancenet.com)`,
+    `${q} site:walmart.com`,
+    `${q} (site:sephora.com OR site:ulta.com OR site:fragrancenet.com OR site:macys.com OR site:nordstrom.com)`,
   ];
 
   // Parallel calls: Serper shopping (images+prices) + organic search (direct retailer URLs)
   const [shoppingRes, ...organicResponses] = await Promise.all([
     serperRequest('shopping', shoppingApiKey, { q, gl, hl, num: 40 }),
     ...organicQueries.map((oq) =>
-      serperRequest('search', shoppingApiKey, { q: oq, gl, hl, num: 40 }),
+      serperRequest('search', shoppingApiKey, { q: oq, gl, hl, num: 10 }),
     ),
   ]);
 
@@ -1320,7 +1456,10 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   );
   const organicCandidates: OI[] = organicSets.flat();
 
-  const skipDomains = ['fragrantica.com', 'wikipedia.org', 'youtube.com', 'reddit.com', 'basenotes.com', 'parfumo.com'];
+  const skipDomains = [
+    'fragrantica.com', 'wikipedia.org', 'youtube.com', 'reddit.com', 'basenotes.com', 'parfumo.com',
+    'giftexpress.com', 'shopandbeyond', 'jomashop.com', 'fragrancemarket.com',
+  ];
   function isSkippedDomain(link: string): boolean {
     try {
       const host = new URL(link).hostname.toLowerCase();
@@ -1353,24 +1492,6 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     return score;
   }
 
-  function isLikelyProductUrl(link: string): boolean {
-    try {
-      const u = new URL(link);
-      const host = u.hostname.toLowerCase();
-      if (host.includes('google.')) return false;
-      const path = u.pathname.toLowerCase();
-
-      if (host.includes('amazon.')) return path.includes('/dp/') || path.includes('/gp/product/');
-      if (host.includes('ebay.')) return path.includes('/itm/');
-      if (host.includes('walmart.')) return path.includes('/ip/');
-
-      if (path.includes('/search') || path === '/s' || path === '/shop' || path.endsWith('/category')) return false;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   type R = ProductListingRow;
   const queryWords = q.toLowerCase().split(/\s+/).filter((w) => w.length > 2 && w !== 'perfume' && w !== 'buy' && w !== 'online');
   const nameWords = nameHint.split(/\s+/).filter((w) => w.length > 2);
@@ -1386,7 +1507,44 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
     if (d.includes('amazon.')) return 'Amazon';
     if (d.includes('ebay.')) return 'eBay';
     if (d.includes('walmart.')) return 'Walmart';
+    if (d.includes('sephora.')) return 'Sephora';
+    if (d.includes('ulta.')) return 'Ulta';
+    if (d.includes('fragrancenet.')) return 'FragranceNet';
+    if (d.includes('macys.') || d.includes('macy')) return "Macy's";
+    if (d.includes('nordstrom.')) return 'Nordstrom';
+    if (d.includes('target.')) return 'Target';
     return source || domain;
+  }
+
+  function retailerFromProductUrl(productUrl: string): string {
+    try {
+      const host = new URL(productUrl).hostname.replace(/^www\./, '').toLowerCase();
+      return normalizeRetailerName(undefined, host);
+    } catch {
+      return '';
+    }
+  }
+
+  function isMajorProductUrl(productUrl?: string | null): boolean {
+    if (!productUrl) return false;
+    try {
+      const host = new URL(productUrl).hostname.toLowerCase();
+      return host.includes('amazon.')
+        || host.includes('ebay.')
+        || host.includes('walmart.')
+        || host.includes('sephora.')
+        || host.includes('ulta.')
+        || host.includes('fragrancenet.')
+        || host.includes('macys.')
+        || host.includes('nordstrom.')
+        || host.includes('target.');
+    } catch {
+      return false;
+    }
+  }
+
+  function maxResultsForDomain(domain: string): number {
+    return isMajorRetailerDomain(domain) ? 4 : 3;
   }
 
   function countTokenHits(text: string, tokens: string[]): number {
@@ -1414,13 +1572,12 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
   const usedShoppingIds = new Set<string>();
   const seenUrls = new Set<string>();
   const domainCounts = new Map<string, number>();
-  const MAX_PER_DOMAIN = 2;
   const all: Array<R & { _score: number }> = [];
 
   for (const item of organicCandidates) {
     const link = item.link || '';
     if (!link || isSkippedDomain(link)) continue;
-    if (!titleLooksRelevant(item.title || '')) continue;
+    if (!titleLooksRelevant(item.title || '', link)) continue;
 
     let domain = '';
     let domainKey = '';
@@ -1431,8 +1588,10 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
       continue;
     }
     if (!isLikelyProductUrl(link)) continue;
-    if (seenUrls.has(link)) continue;
-    if ((domainCounts.get(domain) || 0) >= MAX_PER_DOMAIN) continue;
+    const pairedUrl = finalizeProductUrl(link);
+    if (!pairedUrl) continue;
+    if (seenUrls.has(pairedUrl)) continue;
+    if ((domainCounts.get(domain) || 0) >= maxResultsForDomain(domain)) continue;
     if (link.includes('https:/www.') || link.includes('http:/www.')) continue;
 
     const titleText = (item.title || '').toLowerCase();
@@ -1448,14 +1607,19 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
       .filter((m) => getSourceKey(m.source) === domainKey);
     let shopping = shoppingMatches.find((m) => !usedShoppingIds.has(m._id)) || shoppingMatches[0];
 
+    if (!shopping) {
+      const fallbackShopping = preparedShopping
+        .filter((m) => Boolean(m.thumbnail))
+        .filter((m) => m._hits >= 1)
+        .sort((a, b) => b._hits - a._hits);
+      shopping = fallbackShopping.find((m) => !usedShoppingIds.has(m._id)) || fallbackShopping[0];
+    }
+
+    if (!shopping?.thumbnail) continue;
+
     if (shopping) {
       usedShoppingIds.add(shopping._id);
     }
-
-    const rawPaired = shopping?.product_link || link;
-    if (!rawPaired || isGoogleListingUrl(rawPaired) || !isLikelyProductUrl(rawPaired)) continue;
-    const pairedUrl = rawPaired;
-    if (seenUrls.has(pairedUrl)) continue;
 
     let pairedDomain = domain;
     try {
@@ -1468,92 +1632,92 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
       name: shopping?.title || item.title || '',
       brand: '',
       estimatedPrice: shopping?.price || '',
-      retailer: normalizeRetailerName(shopping?.source, domain),
-      imageUrl: shopping?.thumbnail || null,
+      retailer: retailerFromProductUrl(pairedUrl),
+      imageUrl: shopping.thumbnail,
       productUrl: pairedUrl,
       condition: shopping?.condition || null,
-      _score: scoreOrganicResult(item, queryWords) + (nameMatch ? 2 : 0) + (queryMatch ? 1 : 0) + (isMajor ? 2 : 0) + (shopping?.price ? 3 : 0) + (shopping?.thumbnail ? 2 : 0),
+      _score: scoreOrganicResult(item, queryWords) + (nameMatch ? 2 : 0) + (queryMatch ? 1 : 0) + (isMajor ? 14 : 0) + (shopping?.price ? 3 : 0) + (shopping?.thumbnail ? 2 : 0),
     });
   }
 
   // Add shopping rows with direct retailer links from shopping index.
   for (const s of preparedShopping) {
-    const candidate = s.product_link || '';
-    if (!candidate || isSkippedDomain(candidate) || isGoogleListingUrl(candidate)) continue;
-    if (!isLikelyProductUrl(candidate)) continue;
+    const productUrl = finalizeProductUrl(s.product_link);
+    if (!productUrl || isSkippedDomain(productUrl)) continue;
+    const prepared = preparedShopping.find((p) => p.title === s.title && p.source === s.source && p.thumbnail === s.thumbnail);
+    if (!prepared?.thumbnail) continue;
+    const minHits = isMajorRetailerDomain(new URL(productUrl).hostname) ? 1 : requiredTokenHits;
+    if (prepared._hits < minHits) continue;
     let parsed: URL;
     try {
-      parsed = new URL(candidate);
+      parsed = new URL(productUrl);
     } catch {
       continue;
     }
-    const prepared = preparedShopping.find((p) => p.title === s.title && p.source === s.source && p.thumbnail === s.thumbnail);
-    if (!prepared?.thumbnail) continue;
-    const minHits = isMajorRetailerDomain(parsed.hostname) ? 1 : requiredTokenHits;
-    if (prepared._hits < minHits) continue;
     const host = parsed.hostname.toLowerCase();
     if (host.includes('google.com') || host.includes('google.co.')) continue;
     const domain = host.replace(/^www\./, '');
-    if (seenUrls.has(candidate)) continue;
-    if ((domainCounts.get(domain) || 0) >= MAX_PER_DOMAIN) continue;
-    seenUrls.add(candidate);
+    if (seenUrls.has(productUrl)) continue;
+    if ((domainCounts.get(domain) || 0) >= maxResultsForDomain(domain)) continue;
+    seenUrls.add(productUrl);
     domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
     all.push({
       name: s.title || '',
       brand: '',
       estimatedPrice: s.price || '',
-      retailer: normalizeRetailerName(s.source, domain),
+      retailer: retailerFromProductUrl(productUrl),
       imageUrl: prepared.thumbnail,
-      productUrl: candidate,
+      productUrl,
       condition: s.condition || null,
-      _score: 8 + (s.price ? 3 : 0) + (prepared.thumbnail ? 2 : 0) + prepared._hits,
+      _score: 8 + (s.price ? 3 : 0) + (prepared.thumbnail ? 2 : 0) + prepared._hits + (isMajorProductUrl(productUrl) ? 10 : 0),
     });
   }
 
   const ranked = all.sort((a, b) => b._score - a._score);
+  const SIMILAR_TARGET = 30;
 
-  const strict = ranked
-    .filter((r) => Boolean(r.productUrl) && Boolean(r.imageUrl) && Boolean((r.estimatedPrice || '').trim()))
-    .slice(0, 20);
-
-  const relaxed = ranked
-    .filter((r) => Boolean(r.productUrl) && Boolean(r.imageUrl))
-    .slice(0, 20);
-
-  const fallbackFromShopping: Array<R & { _score: number }> = preparedShopping
-    .filter((s) => Boolean(s.thumbnail) && Boolean((s.price || '').trim()) && s._hits >= 1)
-    .slice(0, 20)
-    .map((s) => ({
+  const fallbackFromShopping: Array<R & { _score: number }> = [];
+  for (const s of preparedShopping.filter((item) => Boolean(item.thumbnail) && item._hits >= 1)) {
+    const productUrl = finalizeProductUrl(s.product_link);
+    if (!productUrl) continue;
+    fallbackFromShopping.push({
       name: s.title || q,
       brand: '',
       estimatedPrice: s.price || '',
       retailer: normalizeRetailerName(s.source, ''),
       imageUrl: s.thumbnail || null,
-      productUrl: resolveProductUrl(s.product_link, s.title || q, '', normalizeRetailerName(s.source, '')),
+      productUrl,
       condition: s.condition || null,
       _score: 6 + s._hits + (s.price ? 2 : 0) + (s.thumbnail ? 2 : 0),
-    }));
+    });
+    if (fallbackFromShopping.length >= SIMILAR_TARGET) break;
+  }
 
   const merged: Array<R & { _score: number }> = [];
   const seenProductUrls = new Set<string>();
-  const appendUnique = (rows: Array<R & { _score: number }>) => {
+  const appendUnique = (rows: Array<R & { _score: number }>, limit = SIMILAR_TARGET) => {
     for (const row of rows) {
-      if (!row.productUrl) continue;
+      if (!row.productUrl || !row.imageUrl) continue;
       if (seenProductUrls.has(row.productUrl)) continue;
       seenProductUrls.add(row.productUrl);
       merged.push(row);
-      if (merged.length >= 20) break;
+      if (merged.length >= limit) break;
     }
   };
 
-  appendUnique(strict);
-  if (merged.length < 6) appendUnique(relaxed);
-  if (merged.length < 6) appendUnique(fallbackFromShopping);
+  appendUnique(ranked);
+  if (merged.length < 10) appendUnique(fallbackFromShopping);
 
-  const results = merged.map(({ _score, ...row }) => ({
-    ...row,
-    productUrl: resolveProductUrl(row.productUrl, row.name, row.brand, row.retailer),
-  }));
+  const results: ProductListingRow[] = [];
+  for (const { _score, ...row } of merged) {
+    const productUrl = finalizeProductUrl(row.productUrl);
+    if (!productUrl) continue;
+    results.push({
+      ...row,
+      productUrl,
+      retailer: retailerFromProductUrl(productUrl) || row.retailer,
+    });
+  }
 
   try {
     await env.DB.prepare(
@@ -1893,7 +2057,7 @@ The PerfumeSnap Team`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'PerfumeSnap <noreply@perfumesnap.app>',
+        from: 'PerfumeSnap <noreply@mail.perfumesnap.app>',
         to: [email],
         subject: `Your PerfumeSnap Collection Export (${rows.length} items)`,
         html: htmlBody,
@@ -1920,297 +2084,4 @@ The PerfumeSnap Team`;
   }
 }
 
-// ----------------------------- Admin ---------------------------------
-
-function checkAdmin(request: Request, env: Env): Response | null {
-  const key = env.ADMIN_KEY;
-  if (!key) return jsonResponse({ error: 'Admin not configured' }, 503);
-
-  const url = new URL(request.url);
-  const provided = url.searchParams.get('key') || request.headers.get('X-Admin-Key');
-  if (provided !== key) {
-    return jsonResponse({ error: 'Unauthorized' }, 401);
-  }
-  return null;
-}
-
-async function handleAdmin(request: Request, url: URL, env: Env): Promise<Response> {
-  // The dashboard page itself — serves HTML, key checked inside the page via JS
-  if (url.pathname === '/admin' && request.method === 'GET') {
-    const authErr = checkAdmin(request, env);
-    if (authErr) return authErr;
-    return new Response(ADMIN_HTML, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
-    });
-  }
-
-  // ---- API routes (all require key) ----
-  const authErr = checkAdmin(request, env);
-  if (authErr) return authErr;
-
-  if (url.pathname === '/admin/feedback' && request.method === 'GET') {
-    return await handleAdminFeedback(url, env);
-  }
-
-  if (url.pathname === '/admin/feedback/stats' && request.method === 'GET') {
-    return await handleAdminFeedbackStats(env);
-  }
-
-  if (url.pathname === '/admin/images' && request.method === 'GET') {
-    return await handleAdminImages(url, env, request);
-  }
-
-  return jsonResponse({ error: 'Not found' }, 404);
-}
-
-async function handleAdminFeedback(url: URL, env: Env): Promise<Response> {
-  const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200);
-  const offset = Number(url.searchParams.get('offset')) || 0;
-
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS feedback (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      perfume_name TEXT NOT NULL,
-      perfume_brand TEXT NOT NULL,
-      satisfied INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
-    )
-  `).run();
-
-  const rows = await env.DB.prepare(
-    'SELECT id, user_id, perfume_name, perfume_brand, satisfied, created_at FROM feedback ORDER BY created_at DESC LIMIT ? OFFSET ?'
-  ).bind(limit, offset).all();
-
-  return jsonResponse({ items: rows.results, count: rows.results.length });
-}
-
-async function handleAdminFeedbackStats(env: Env): Promise<Response> {
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS feedback (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      perfume_name TEXT NOT NULL,
-      perfume_brand TEXT NOT NULL,
-      satisfied INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
-    )
-  `).run();
-
-  const total = await env.DB.prepare('SELECT COUNT(*) as c FROM feedback').first<{ c: number }>();
-  const yes = await env.DB.prepare('SELECT COUNT(*) as c FROM feedback WHERE satisfied = 1').first<{ c: number }>();
-  const no = await env.DB.prepare('SELECT COUNT(*) as c FROM feedback WHERE satisfied = 0').first<{ c: number }>();
-
-  const topPerfumes = await env.DB.prepare(`
-    SELECT perfume_brand, perfume_name,
-           COUNT(*) as total,
-           SUM(CASE WHEN satisfied = 1 THEN 1 ELSE 0 END) as positive,
-           SUM(CASE WHEN satisfied = 0 THEN 1 ELSE 0 END) as negative
-    FROM feedback
-    GROUP BY perfume_brand, perfume_name
-    ORDER BY total DESC
-    LIMIT 20
-  `).all();
-
-  return jsonResponse({
-    total: total?.c ?? 0,
-    positive: yes?.c ?? 0,
-    negative: no?.c ?? 0,
-    byPerfume: topPerfumes.results,
-  });
-}
-
-async function handleAdminImages(url: URL, env: Env, request: Request): Promise<Response> {
-  const cursor = url.searchParams.get('cursor') || undefined;
-  const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200);
-
-  const listed = await env.IMAGES.list({ limit, cursor });
-
-  const items = listed.objects.map((obj) => ({
-    key: obj.key,
-    size: obj.size,
-    uploaded: obj.uploaded.toISOString(),
-    url: publicImageUrl(request, obj.key),
-    contentType: obj.httpMetadata?.contentType || null,
-  }));
-
-  return jsonResponse({
-    items,
-    cursor: listed.truncated ? listed.cursor : null,
-    truncated: listed.truncated,
-  });
-}
-
-// ----------------------------- Admin Dashboard HTML --------------------
-
-const ADMIN_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PerfumeSnap Admin</title>
-<style>
-  :root { --bg: #0f0d0a; --card: #1a1710; --border: #2a2418; --gold: #c8943c; --gold-dim: #8a6e30; --text: #f5ead4; --text2: #a89878; --green: #5a9a5a; --red: #c44; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-  .header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
-  .header h1 { font-size: 20px; font-weight: 700; color: var(--gold); }
-  .header .badge { font-size: 11px; background: var(--gold-dim); color: var(--text); padding: 3px 10px; border-radius: 99px; font-weight: 600; }
-  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 32px; }
-  .tab { padding: 14px 24px; font-size: 14px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--gold); border-bottom-color: var(--gold); }
-  .content { padding: 32px; max-width: 1200px; }
-  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
-  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-  .stat-card .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-  .stat-card .value { font-size: 32px; font-weight: 800; color: var(--gold); }
-  .stat-card .sub { font-size: 13px; color: var(--text2); margin-top: 4px; }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; padding: 12px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); border-bottom: 1px solid var(--border); }
-  td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--border); }
-  tr:hover td { background: rgba(200,148,60,0.04); }
-  .badge-yes { color: var(--green); font-weight: 600; }
-  .badge-no { color: var(--red); font-weight: 600; }
-  .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
-  .img-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: pointer; transition: border-color 0.2s; }
-  .img-card:hover { border-color: var(--gold-dim); }
-  .img-card img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #111; }
-  .img-card .img-info { padding: 10px 12px; }
-  .img-card .img-key { font-size: 11px; color: var(--text2); word-break: break-all; }
-  .img-card .img-date { font-size: 10px; color: var(--text2); margin-top: 4px; }
-  .load-more { display: block; margin: 24px auto; padding: 12px 32px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--gold); font-weight: 600; cursor: pointer; font-size: 14px; }
-  .load-more:hover { border-color: var(--gold-dim); }
-  .empty { text-align: center; padding: 60px 20px; color: var(--text2); font-size: 15px; }
-  .section-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
-  .copy-toast { position: fixed; bottom: 24px; right: 24px; background: var(--gold); color: #000; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
-  .copy-toast.show { opacity: 1; }
-</style>
-</head>
-<body>
-<div class="header">
-  <h1>PerfumeSnap</h1>
-  <span class="badge">Admin</span>
-</div>
-<div class="tabs">
-  <div class="tab active" data-tab="feedback">Feedback</div>
-  <div class="tab" data-tab="images">Images</div>
-</div>
-<div class="content" id="content"></div>
-<div class="copy-toast" id="toast">Copied!</div>
-
-<script>
-const BASE = location.origin;
-const KEY = new URLSearchParams(location.search).get('key') || '';
-const api = (path) => fetch(BASE + path + (path.includes('?') ? '&' : '?') + 'key=' + KEY).then(r => r.json());
-
-let currentTab = 'feedback';
-let imageCursor = null;
-
-document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    currentTab = t.dataset.tab;
-    imageCursor = null;
-    load();
-  });
-});
-
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2000);
-}
-
-function timeAgo(ts) {
-  const d = Date.now() - ts;
-  if (d < 60000) return 'just now';
-  if (d < 3600000) return Math.floor(d/60000) + 'm ago';
-  if (d < 86400000) return Math.floor(d/3600000) + 'h ago';
-  return Math.floor(d/86400000) + 'd ago';
-}
-
-async function loadFeedback() {
-  const [stats, list] = await Promise.all([api('/admin/feedback/stats'), api('/admin/feedback?limit=100')]);
-  const pct = stats.total > 0 ? Math.round(stats.positive / stats.total * 100) : 0;
-
-  let html = '<div class="stats-grid">';
-  html += '<div class="stat-card"><div class="label">Total Responses</div><div class="value">' + stats.total + '</div></div>';
-  html += '<div class="stat-card"><div class="label">Satisfied</div><div class="value badge-yes">' + stats.positive + '</div><div class="sub">' + pct + '% positive</div></div>';
-  html += '<div class="stat-card"><div class="label">Unsatisfied</div><div class="value badge-no">' + stats.negative + '</div></div>';
-  html += '</div>';
-
-  if (stats.byPerfume && stats.byPerfume.length > 0) {
-    html += '<div class="section-title">By Perfume</div>';
-    html += '<table><tr><th>Perfume</th><th>Total</th><th>Positive</th><th>Negative</th></tr>';
-    stats.byPerfume.forEach(p => {
-      html += '<tr><td>' + p.perfume_brand + ' ' + p.perfume_name + '</td><td>' + p.total + '</td><td class="badge-yes">' + p.positive + '</td><td class="badge-no">' + p.negative + '</td></tr>';
-    });
-    html += '</table><br><br>';
-  }
-
-  html += '<div class="section-title">Recent Feedback</div>';
-  if (!list.items || list.items.length === 0) {
-    html += '<div class="empty">No feedback yet</div>';
-  } else {
-    html += '<table><tr><th>Time</th><th>Perfume</th><th>Result</th></tr>';
-    list.items.forEach(f => {
-      html += '<tr><td>' + timeAgo(f.created_at) + '</td><td>' + f.perfume_brand + ' ' + f.perfume_name + '</td><td class="' + (f.satisfied ? 'badge-yes' : 'badge-no') + '">' + (f.satisfied ? 'Satisfied' : 'Unsatisfied') + '</td></tr>';
-    });
-    html += '</table>';
-  }
-  document.getElementById('content').innerHTML = html;
-}
-
-async function loadImages(append) {
-  const params = 'limit=50' + (imageCursor ? '&cursor=' + encodeURIComponent(imageCursor) : '');
-  const data = await api('/admin/images?' + params);
-
-  let html = append ? document.getElementById('content').innerHTML.replace(/<button class="load-more".*?<\\/button>/, '') : '';
-
-  if (!append) {
-    html += '<div class="section-title">R2 Images (' + (data.items?.length || 0) + (data.truncated ? '+' : '') + ')</div>';
-  }
-
-  if (!data.items || data.items.length === 0) {
-    html += '<div class="empty">No images found</div>';
-  } else {
-    if (!append) html += '<div class="img-grid" id="img-grid">';
-    const cards = data.items.map(img => {
-      const isImage = (img.contentType || '').startsWith('image/');
-      return '<div class="img-card" onclick="copyUrl(\\'' + img.url.replace(/'/g, "\\\\'") + '\\')">'
-        + (isImage ? '<img src="' + img.url + '" loading="lazy" alt="">' : '<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#111;color:#555;font-size:12px;">No preview</div>')
-        + '<div class="img-info"><div class="img-key">' + img.key + '</div><div class="img-date">' + new Date(img.uploaded).toLocaleDateString() + ' &middot; ' + (img.size/1024).toFixed(0) + ' KB</div></div></div>';
-    }).join('');
-
-    if (append) {
-      html = html.replace(/<\\/div>\\s*$/, cards + '</div>');
-    } else {
-      html += cards + '</div>';
-    }
-  }
-
-  imageCursor = data.cursor;
-  if (data.truncated && data.cursor) {
-    html += '<button class="load-more" onclick="loadImages(true)">Load More</button>';
-  }
-
-  document.getElementById('content').innerHTML = html;
-}
-
-function copyUrl(url) {
-  navigator.clipboard.writeText(url).then(() => showToast('Image URL copied!'));
-}
-
-function load() {
-  if (currentTab === 'feedback') loadFeedback();
-  else loadImages(false);
-}
-
-load();
-</script>
-</body>
-</html>`;
 

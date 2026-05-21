@@ -1,48 +1,37 @@
 import type { SimilarPerfume } from '../services/api';
+import { getCachedPreferredCurrency, getCurrencySymbol } from '../services/currency';
+import { convertFromUsd } from '../services/exchangeRates';
+import { cleanFragranceName } from './perfumeDisplay';
 
 const DEVICE_LOCALE = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
-const localeParts = DEVICE_LOCALE.replace('_', '-').split('-');
-const DEVICE_REGION = (localeParts[1] || 'US').toUpperCase();
-const REGION_TO_CURRENCY: Record<string, string> = {
-  US: 'USD', GB: 'GBP',
-  GR: 'EUR', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', NL: 'EUR', IE: 'EUR', PT: 'EUR', CY: 'EUR',
-  AU: 'AUD', CA: 'CAD', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK',
-  JP: 'JPY', KR: 'KRW', CN: 'CNY', IN: 'INR', AE: 'AED', SA: 'SAR', TR: 'TRY',
-};
-export const DEFAULT_CURRENCY = REGION_TO_CURRENCY[DEVICE_REGION] || 'USD';
+const ZERO_DECIMAL_CURRENCIES = new Set(['JPY', 'KRW']);
 
-function getCurrencySymbol(currencyCode: string): string {
-  try {
-    const parts = new Intl.NumberFormat(DEVICE_LOCALE, {
-      style: 'currency',
-      currency: currencyCode,
-      currencyDisplay: 'narrowSymbol',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).formatToParts(0);
-    const symbol = parts.find((p) => p.type === 'currency')?.value;
-    if (symbol) {
-      return symbol.replace(/^USD$/i, '$').replace(/^US\$/i, '$').replace(/^([A-Z]{2})\$/i, '$');
-    }
-  } catch { /* ignore */ }
-  return '$';
+export function getDisplayCurrencyCode(): string {
+  return getCachedPreferredCurrency();
 }
 
-function formatNumberValue(value: number): string {
+function formatNumberValue(value: number, currencyCode: string): string {
+  const fractionDigits = ZERO_DECIMAL_CURRENCIES.has(currencyCode) ? 0 : 2;
   try {
     return new Intl.NumberFormat(DEVICE_LOCALE, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
     }).format(value);
   } catch {
-    return value.toFixed(2);
+    return fractionDigits === 0 ? String(Math.round(value)) : value.toFixed(2);
   }
 }
 
-function formatSingleCurrencyRange(min: number, max: number, currencyCode: string): string {
+function formatSingleCurrencyRange(minUsd: number, maxUsd: number, currencyCode: string): string {
+  const min = convertFromUsd(minUsd, currencyCode);
+  const max = convertFromUsd(maxUsd, currencyCode);
   const symbol = getCurrencySymbol(currencyCode);
-  if (min === max) return `${symbol}${formatNumberValue(min)}`;
-  return `${symbol}${formatNumberValue(min)}-${formatNumberValue(max)}`;
+  if (min === max) return `${symbol}${formatNumberValue(min, currencyCode)}`;
+  return `${symbol}${formatNumberValue(min, currencyCode)}-${formatNumberValue(max, currencyCode)}`;
+}
+
+export function formatPriceValues(minUsd: number, maxUsd: number, currencyCode = getCachedPreferredCurrency()): string {
+  return formatSingleCurrencyRange(minUsd, maxUsd, currencyCode);
 }
 
 export function formatPriceRange(raw: string | undefined, currencyCode: string): string {
@@ -65,7 +54,7 @@ export function splitCurrencyDisplay(display: string): { currency: string; amoun
 export function parseNumericPrice(raw?: string): number | null {
   if (!raw) return null;
   const cleaned = raw.replace(/,/g, '');
-  const match = cleaned.match(/\$?\s*(\d+(?:\.\d+)?)/);
+  const match = cleaned.match(/(?:\$|€|£|¥|₩|₹)?\s*(\d+(?:\.\d+)?)/);
   if (!match) return null;
   const value = Number(match[1]);
   return Number.isFinite(value) ? value : null;
@@ -73,7 +62,7 @@ export function parseNumericPrice(raw?: string): number | null {
 
 export function isLikelySampleOrDecant(item: SimilarPerfume): boolean {
   const text = `${item.name || ''} ${item.brand || ''}`.toLowerCase();
-  if (/(decant|sample|vial|travel|mini|tester)/.test(text)) return true;
+  if (/(decant|sample|vial|travel|mini|tester|split|decanted)/.test(text)) return true;
   const mlMatch = text.match(/(\d+(?:\.\d+)?)\s*ml\b/);
   if (mlMatch) {
     const ml = Number(mlMatch[1]);
@@ -87,28 +76,51 @@ export function isLikelySampleOrDecant(item: SimilarPerfume): boolean {
   return false;
 }
 
-export function computeLivePriceStats(listings: SimilarPerfume[]): { display: string } | null {
+/** Exclude gift sets, body products, and non-standard bottle sizes from price stats. */
+export function isLikelyNonRetailBottle(item: SimilarPerfume): boolean {
+  if (isLikelySampleOrDecant(item)) return true;
+  const text = `${item.name || ''} ${item.brand || ''}`.toLowerCase();
+  if (/\b(gift set|discovery set|travel set|body lotion|body spray|shower gel|deodorant|aftershave|hair mist|candle|refill cartridge)\b/.test(text)) {
+    return true;
+  }
+  if (/\b(10|15|30|0\.5|1\.0|1\.7)\s*(ml|fl\s*oz|oz)\b/.test(text)) return true;
+  if (/\b(200|250|500)\s*ml\b/.test(text)) return true;
+  return false;
+}
+
+export function computeLivePriceStats(
+  listings: SimilarPerfume[],
+  currencyCode = getCachedPreferredCurrency(),
+): { display: string } | null {
   const priced = listings
-    .filter((item) => !isLikelySampleOrDecant(item))
+    .filter((item) => !isLikelyNonRetailBottle(item))
     .map((item) => ({
       price: parseNumericPrice(item.estimatedPrice),
       retailer: item.retailer || 'Retailer',
     }))
     .filter((x): x is { price: number; retailer: string } => x.price !== null)
-    .filter((x) => x.price >= 10);
+    .filter((x) => x.price >= 15);
   if (priced.length === 0) return null;
 
   let sorted = priced.map((p) => p.price).sort((a, b) => a - b);
   if (sorted.length >= 5) {
-    const from = Math.floor(sorted.length * 0.2);
-    const to = Math.ceil(sorted.length * 0.8);
+    const from = Math.floor(sorted.length * 0.15);
+    const to = Math.ceil(sorted.length * 0.85);
     sorted = sorted.slice(from, to);
   }
+
   const median = sorted[Math.floor(sorted.length / 2)];
-  const bounded = sorted.filter((v) => v >= median * 0.6 && v <= median * 1.8);
+  const bounded = sorted.filter((v) => v >= median * 0.55 && v <= median * 1.65);
   if (bounded.length >= 2) sorted = bounded;
 
   const min = sorted[0];
   const max = sorted[sorted.length - 1];
-  return { display: formatSingleCurrencyRange(min, max, DEFAULT_CURRENCY) };
+  return { display: formatSingleCurrencyRange(min, max, currencyCode) };
+}
+
+export function buildSimilarSearchTerms(name: string, brand: string): { name: string; brand: string; query: string } {
+  const cleanName = cleanFragranceName(name, brand);
+  const cleanBrand = (brand || '').trim();
+  const query = `${cleanBrand} ${cleanName}`.trim();
+  return { name: cleanName, brand: cleanBrand, query: query || `${cleanBrand} ${name}`.trim() };
 }

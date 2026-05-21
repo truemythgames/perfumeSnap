@@ -16,14 +16,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { HistoryItem, getHistory, clearHistory } from '../services/history';
-import { historyPrefillKey, syncHistoryPrefillCache } from '../services/resultNavigationCache';
+import { historyPrefillKey, setResultPrefill, syncHistoryPrefillCache } from '../services/resultNavigationCache';
+import { usePreferredCurrency } from '../hooks/usePreferredCurrency';
+import { formatPriceRange } from '../utils/perfumePricing';
 
 const PHOTO_WIDTH = 90;
 const PHOTO_HEIGHT = PHOTO_WIDTH * 1.3;
 
-function getPriceDisplay(item: HistoryItem): string | null {
+function getPriceDisplay(item: HistoryItem, currencyCode: string): string | null {
   const range = item.perfume.priceRange;
-  if (range && range.trim() && !/unknown|n\/a/i.test(range)) return range;
+  if (range && range.trim() && !/unknown|n\/a/i.test(range)) {
+    return formatPriceRange(range, currencyCode);
+  }
   return null;
 }
 
@@ -31,6 +35,7 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const preferredCurrency = usePreferredCurrency();
 
   useEffect(() => { router.prefetch('/collection-detail'); }, []);
   useEffect(() => { syncHistoryPrefillCache(items); }, [items]);
@@ -69,6 +74,10 @@ export default function HistoryScreen() {
 
   const openDetail = (item: HistoryItem) => {
     const key = historyPrefillKey(item.id);
+    setResultPrefill(key, {
+      ...item.perfume,
+      imageUri: item.imageUri ?? item.perfume.imageUri ?? null,
+    });
     router.push({
       pathname: '/collection-detail',
       params: {
@@ -85,7 +94,7 @@ export default function HistoryScreen() {
 
   const renderItem = ({ item }: { item: HistoryItem }) => {
     const p = item.perfume;
-    const price = getPriceDisplay(item);
+    const price = getPriceDisplay(item, preferredCurrency);
     return (
       <Pressable
         style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}

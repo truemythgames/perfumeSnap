@@ -1,0 +1,13 @@
+{
+  "name": "perfumesnap-admin",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.90.0",
+    "@cloudflare/workers-types": "^4.20250501.0"
+  }
+}

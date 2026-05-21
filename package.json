@@ -6,6 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "ios:bump-build": "node scripts/bump-ios-build.js",
+    "ios:xcode": "node scripts/bump-ios-build.js && open ios/PerfumeSnap.xcworkspace",
     "web": "expo start --web",
     "postinstall": "sed -i '' 's/^set -e$/set -e\\\nexport GEM_HOME=\"\"\\\nexport GEM_PATH=\"\"/' node_modules/@react-native-firebase/app/ios_config.sh 2>/dev/null || true"
   },

@@ -17,7 +17,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection } from '../services/api';
-import { collectionPrefillKey, syncCollectionPrefillCache } from '../services/resultNavigationCache';
+import { collectionPrefillKey, setResultPrefill, syncCollectionPrefillCache } from '../services/resultNavigationCache';
+import { usePreferredCurrency } from '../hooks/usePreferredCurrency';
+import { formatPriceValues } from '../utils/perfumePricing';
 
 const PHOTO_WIDTH = 90;
 const PHOTO_HEIGHT = PHOTO_WIDTH * 1.3;
@@ -36,7 +38,7 @@ function isLikelySampleOrDecant(name?: string, brand?: string): boolean {
   return /(decant|sample|vial|travel|mini|tester)/.test(text);
 }
 
-function computePriceDisplay(item: CollectionItem): string | null {
+function computePriceDisplay(item: CollectionItem, currencyCode: string): string | null {
   const listings = item.perfume.cachedSimilarListings || [];
   const prices = listings
     .filter((l) => !isLikelySampleOrDecant(l.name, l.brand))
@@ -56,13 +58,14 @@ function computePriceDisplay(item: CollectionItem): string | null {
   if (inBand.length >= 2) bounded = inBand;
   const min = bounded[0];
   const max = bounded[bounded.length - 1];
-  return min === max ? `$${min.toFixed(2)}` : `$${min.toFixed(2)} - $${max.toFixed(2)}`;
+  return formatPriceValues(min, max, currencyCode);
 }
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const [allItems, setAllItems] = useState<CollectionItem[]>([]);
   const [query, setQuery] = useState('');
+  const preferredCurrency = usePreferredCurrency();
   const inputRef = useRef<TextInput>(null);
 
   useFocusEffect(
@@ -94,6 +97,11 @@ export default function SearchScreen() {
 
   const openDetail = (item: CollectionItem) => {
     const key = collectionPrefillKey(item.id);
+    setResultPrefill(key, {
+      ...item.perfume,
+      imageUri: item.perfume.imageUri ?? null,
+      imageKey: item.perfume.imageKey ?? null,
+    });
     router.push({
       pathname: '/collection-detail',
       params: {
@@ -110,7 +118,7 @@ export default function SearchScreen() {
 
   const renderItem = ({ item }: { item: CollectionItem }) => {
     const p = item.perfume;
-    const price = computePriceDisplay(item);
+    const price = computePriceDisplay(item, preferredCurrency);
     return (
       <Pressable
         style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
