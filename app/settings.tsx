@@ -22,10 +22,7 @@ import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import { restorePurchases } from '../services/subscription';
 import { CURRENCIES, getPreferredCurrency, setPreferredCurrency, getCurrencyByCode, CurrencyOption } from '../services/currency';
 
-const APP_STORE_URL = Platform.select({
-  ios: 'https://apps.apple.com/app/id6770087818',
-  android: 'https://play.google.com/store/apps/details?id=app.perfumeSnap',
-}) || '';
+import { APP_STORE_URL, openAppStoreReviewPage } from '../services/appReview';
 
 interface SettingsRow {
   icon: string;
@@ -96,7 +93,7 @@ export default function SettingsScreen() {
   };
 
   const handleEncourage = () => {
-    if (APP_STORE_URL) Linking.openURL(APP_STORE_URL);
+    void openAppStoreReviewPage();
   };
 
   const handleContact = () => {

@@ -34,8 +34,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import * as StoreReview from 'expo-store-review';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
+import { requestNativeAppReview } from '../services/appReview';
 import { Colors, Spacing, FontSizes, BorderRadius } from '../constants/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -62,6 +62,7 @@ const VALUATION_COUNT_INTERVAL_MS = 50;
 const VALUATION_COUNT_DURATION_MS = VALUATION_COUNT_STEPS * VALUATION_COUNT_INTERVAL_MS;
 const VALUATION_TO_COLLECTION_DELAY_MS = VALUATION_COUNT_DURATION_MS + CONFETTI_BURST_DURATION_MS + 650;
 const COLLECTION_TO_RATE_DELAY_MS = 4000;
+const RATE_REVIEW_PROMPT_DELAY_MS = 1200;
 const COLLECTION_FRAME_TARGET_SCALE = 0.45;
 const COLLECTION_FRAME_BASE_WIDTH = SCREEN_WIDTH * 0.62;
 const COLLECTION_FRAME_BASE_HEIGHT = PHOTO_FRAME_HEIGHT;
@@ -968,13 +969,9 @@ export default function OnboardingFlow({ onComplete }: Props) {
       withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
     );
 
-    const reviewTimer = setTimeout(async () => {
-      try {
-        if (await StoreReview.hasAction()) {
-          await StoreReview.requestReview();
-        }
-      } catch {}
-    }, 800);
+    const reviewTimer = setTimeout(() => {
+      void requestNativeAppReview();
+    }, RATE_REVIEW_PROMPT_DELAY_MS);
 
     return () => clearTimeout(reviewTimer);
   }, [step]);
@@ -1256,7 +1253,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const isPostWelcomePhase = step >= 4;
   const isEasyPhotoPhase = step === 4;
   const isValuationPhase = step === 5;
-  const isCollectionPhase = step === 6 || step === 7;
+  const isCollectionPhase = step === 6;
   const isRatePhase = step === 7;
 
   return (
@@ -1335,7 +1332,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       {/* ── Step 3: Final welcome with one perfume ── */}
       <Animated.View
         style={[st.layer, rateFade]}
-        pointerEvents={step >= 3 && step <= 7 ? 'auto' : 'none'}
+        pointerEvents={step >= 3 && step <= 6 ? 'auto' : 'none'}
       >
         <View style={st.finalScreen}>
           <View style={[st.finalHero, hasProcessingVisuals && st.processingHero, isCollectionPhase && st.collectionHero]}>
@@ -1506,10 +1503,10 @@ export default function OnboardingFlow({ onComplete }: Props) {
       />
 
       {/* ── Step 7: Rate Us ── */}
-      {(isRatePhase || step === 8) && (
+      {isRatePhase && (
         <Animated.View
-          style={[st.layer, st.rateUsOverlay, rateUsFade, { paddingBottom: insets.bottom + Spacing.lg }]}
-          pointerEvents={isRatePhase ? 'auto' : 'none'}
+          style={[st.layer, st.rateUsOverlay, rateUsFade, { paddingBottom: insets.bottom + Spacing.lg, zIndex: 20 }]}
+          pointerEvents="auto"
         >
           <Image source={RATE_US_BG} style={st.rateUsBgImage} resizeMode="cover" />
           <View style={st.rateUsBgOverlay} />
@@ -1542,10 +1539,10 @@ export default function OnboardingFlow({ onComplete }: Props) {
       )}
 
       {/* ── Step 8: Personalization Loading ── */}
-      {(step === 7 || step === 8) && (
+      {step === 8 && (
         <Animated.View
-          style={[st.layer, st.loadingOverlay, loadingFade, { paddingBottom: insets.bottom + Spacing.lg }]}
-          pointerEvents={step === 8 ? 'auto' : 'none'}
+          style={[st.layer, st.loadingOverlay, loadingFade, { paddingBottom: insets.bottom + Spacing.lg, zIndex: 21 }]}
+          pointerEvents="auto"
         >
           <View style={st.loadingVideoWrap}>
             <VideoView
@@ -2122,7 +2119,9 @@ const st = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 40,
     borderRadius: BorderRadius.full,
-    marginBottom: 16,
+    marginHorizontal: 24,
+    marginBottom: 12,
+    alignSelf: 'stretch',
   },
   rateUsBtnTxt: {
     color: '#fff',
