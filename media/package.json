@@ -1,0 +1,13 @@
+{
+  "name": "perfumesnap-media",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250501.0",
+    "wrangler": "^4.90.0"
+  }
+}

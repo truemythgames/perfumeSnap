@@ -26,5 +26,8 @@
       "binding": "RATE_LIMIT",
       "id": "7f22d5f08b7f494b8a992b8f80d677a8"
     }
-  ]
+  ],
+  "vars": {
+    "MEDIA_BASE_URL": "https://media.perfumesnap.app"
+  }
 }

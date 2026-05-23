@@ -18,5 +18,8 @@
       "binding": "IMAGES",
       "bucket_name": "perfumesnap-images"
     }
-  ]
+  ],
+  "vars": {
+    "MEDIA_BASE_URL": "https://media.perfumesnap.app"
+  }
 }

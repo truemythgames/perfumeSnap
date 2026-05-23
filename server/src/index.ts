@@ -2,6 +2,8 @@ interface Env {
   OPENAI_API_KEY: string;
   DB: D1Database;
   IMAGES: R2Bucket;
+  /** e.g. https://media.perfumesnap.app — edge-cached image CDN worker */
+  MEDIA_BASE_URL?: string;
   SERPER_API_KEY?: string;
   /** @deprecated use SERPER_API_KEY — kept for existing Cloudflare secret */
   PRICES_API_KEY?: string;
@@ -268,10 +270,17 @@ const ARTICLES: Article[] = [
   },
 ];
 
-function getArticleImageUrl(request: Request, article: Article): string | null {
+function mediaBaseUrl(request: Request, env: Env): string {
+  return env.MEDIA_BASE_URL?.replace(/\/$/, '') || new URL(request.url).origin;
+}
+
+function publicImageUrl(request: Request, env: Env, key: string): string {
+  return `${mediaBaseUrl(request, env)}/${key}`;
+}
+
+function getArticleImageUrl(request: Request, env: Env, article: Article): string | null {
   if (!article.imageKey) return null;
-  const url = new URL(request.url);
-  return `${url.origin}/image/${article.imageKey}`;
+  return publicImageUrl(request, env, article.imageKey);
 }
 
 const SYSTEM_PROMPT = `You are PerfumeSnap, the world's most accurate AI perfume identifier. You have encyclopedic knowledge of every perfume, cologne, and fragrance ever produced — including their bottle designs, packaging, cap styles, label typography, and color schemes.
@@ -416,11 +425,6 @@ function getUserId(request: Request): string | null {
   return isValidUserId(queryId) ? queryId! : null;
 }
 
-
-function publicImageUrl(request: Request, key: string): string {
-  const url = new URL(request.url);
-  return `${url.origin}/image/${key}`;
-}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -798,7 +802,7 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
     customMetadata: { userId },
   });
 
-  return jsonResponse({ key, url: publicImageUrl(request, key) }, 201);
+  return jsonResponse({ key, url: publicImageUrl(request, env, key) }, 201);
 }
 
 async function handleServeImage(env: Env, key: string): Promise<Response> {
@@ -895,7 +899,7 @@ async function handleAddToCollection(request: Request, env: Env): Promise<Respon
 
   // Prefer the R2-hosted URL; fall back to whatever client sent (may be a file:// uri)
   const imageUrl = body.imageKey
-    ? publicImageUrl(request, body.imageKey)
+    ? publicImageUrl(request, env, body.imageKey)
     : (typeof body.imageUri === 'string' ? body.imageUri : null);
 
   const sanitizeListings = (input: unknown): SimilarListing[] => {
@@ -1732,7 +1736,7 @@ async function handleGetSimilar(url: URL, env: Env): Promise<Response> {
 
 // ----------------------------- Articles Handlers -----------------------------
 
-function handleGetArticles(request: Request, _env: Env): Response {
+function handleGetArticles(request: Request, env: Env): Response {
   const mapped = ARTICLES.map((a) => ({
     id: a.id,
     slug: a.slug,
@@ -1743,7 +1747,7 @@ function handleGetArticles(request: Request, _env: Env): Response {
     icon: a.icon,
     color: a.color,
     readingTime: a.readingTime,
-    imageUrl: getArticleImageUrl(request, a),
+    imageUrl: getArticleImageUrl(request, env, a),
     sections: a.sections,
   }));
   return jsonResponse(

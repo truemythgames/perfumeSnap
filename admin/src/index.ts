@@ -5,6 +5,7 @@ interface Env {
   ADMIN_PASS: string;
   DB: D1Database;
   IMAGES: R2Bucket;
+  MEDIA_BASE_URL?: string;
 }
 
 function unauthorized(): Response {
@@ -29,9 +30,9 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-function publicImageUrl(request: Request, key: string): string {
-  const origin = new URL(request.url).origin;
-  return `${origin}/images/${encodeURIComponent(key)}`;
+function publicImageUrl(request: Request, env: Env, key: string): string {
+  const base = env.MEDIA_BASE_URL?.replace(/\/$/, '') || new URL(request.url).origin;
+  return `${base}/${key}`;
 }
 
 async function ensureFeedbackTable(env: Env): Promise<void> {
@@ -133,7 +134,7 @@ async function handleImages(url: URL, env: Env, request: Request): Promise<Respo
       key: obj.key,
       size: obj.size,
       uploaded: obj.uploaded.toISOString(),
-      url: publicImageUrl(request, obj.key),
+      url: publicImageUrl(request, env, obj.key),
       contentType: obj.httpMetadata?.contentType || mimeMap[ext] || 'image/jpeg',
       perfume: perfumeNames[obj.key] || null,
     };

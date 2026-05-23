@@ -1,0 +1,14 @@
+{
+  "name": "perfumesnap-media",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-01",
+  "observability": {
+    "enabled": true
+  },
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "perfumesnap-images"
+    }
+  ]
+}
