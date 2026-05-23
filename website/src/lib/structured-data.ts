@@ -1,4 +1,5 @@
 import { SITE_URL, SITE_NAME } from "./seo";
+import { APP_STORE_URL, PLAY_STORE_URL } from "./storeLinks";
 
 export function appJsonLd() {
   return {
@@ -11,7 +12,8 @@ export function appJsonLd() {
       "Identify any perfume instantly with AI. Snap a photo, get the full fragrance profile, notes breakdown, and price comparison.",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     url: SITE_URL,
-    image: `${SITE_URL}/logo.png`,
+    downloadUrl: [APP_STORE_URL, PLAY_STORE_URL],
+    image: `${SITE_URL}/og-default.png`,
   };
 }
 

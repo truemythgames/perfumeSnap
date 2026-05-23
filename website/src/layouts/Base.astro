@@ -2,7 +2,9 @@
 import "@/styles/global.css";
 import Navigation from "@/components/Navigation.astro";
 import Footer from "@/components/Footer.astro";
+import StickyDownload from "@/components/StickyDownload.astro";
 import { SITE_NAME, SITE_URL, DEFAULT_DESCRIPTION } from "@/lib/seo";
+import { APP_STORE_ID } from "@/lib/storeLinks";
 
 interface Props {
   title?: string;
@@ -58,7 +60,7 @@ const canonicalUrl = canonical ?? Astro.url.href;
     <meta name="twitter:image" content={ogImage} />
 
     <!-- Smart App Banner -->
-    <meta name="apple-itunes-app" content="app-id=YOUR_APP_ID" />
+    <meta name="apple-itunes-app" content={`app-id=${APP_STORE_ID}`} />
 
     <!-- Favicons -->
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
@@ -81,9 +83,10 @@ const canonicalUrl = canonical ?? Astro.url.href;
     <!-- Google Tag Manager (noscript) -->
     <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PRVS8M4B" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <Navigation />
-    <main class="flex-1 pt-16">
+    <main class="flex-1 pt-16 pb-24 md:pb-0">
       <slot />
     </main>
     <Footer />
+    <StickyDownload />
   </body>
 </html>

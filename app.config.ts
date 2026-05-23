@@ -38,10 +38,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     bundleIdentifier: 'app.perfumeSnap',
     appStoreUrl: 'https://apps.apple.com/app/id6770087818',
-    buildNumber: '9',
+    buildNumber: '10',
     googleServicesFile: './GoogleService-Info.plist',
   },
   android: {
+    versionCode: 12,
     googleServicesFile: './google-services.json',
     adaptiveIcon: {
       foregroundImage: './assets/logo.png',
@@ -53,6 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.RECORD_AUDIO',
       'android.permission.INTERNET',
       'com.google.android.gms.permission.AD_ID',
+      'com.android.vending.BILLING',
     ],
     predictiveBackGestureEnabled: false,
     package: 'app.perfumeSnap',

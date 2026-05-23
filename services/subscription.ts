@@ -10,6 +10,12 @@ const IOS_REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY ??
 const ANDROID_REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY ?? '';
 const PREMIUM_ENTITLEMENT_ID = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? 'premium';
 
+/** RevenueCat offering package identifiers — must match dashboard package IDs. */
+export const REVENUECAT_PACKAGES = {
+  trial: 'yearly_trial',
+  intro: 'yearly_intro',
+} as const;
+
 let isConfigured = false;
 let configuredAppUserId: string | null = null;
 let customerInfoListenerAdded = false;
@@ -123,6 +129,11 @@ export async function getCurrentOffering(appUserId?: string): Promise<PurchasesO
 
   try {
     const offerings = await Purchases.getOfferings();
+    if (!offerings.current) {
+      console.warn(
+        '[PerfumeSnap] RevenueCat has no current offering. Mark an offering as Current in the RevenueCat dashboard.',
+      );
+    }
     return offerings.current;
   } catch (error) {
     console.warn('[PerfumeSnap] Failed fetching offerings:', error);
@@ -165,7 +176,7 @@ export async function getPaywallPackages(appUserId?: string): Promise<PaywallPac
 
   // Match by custom identifier first, then fall back to product analysis
   const trialPackage =
-    available.find((pkg) => pkg.identifier === 'yearly_trial') ??
+    available.find((pkg) => pkg.identifier === REVENUECAT_PACKAGES.trial) ??
     available.find((pkg) => {
       const intro = pkg.product.introPrice;
       return Boolean(intro && intro.price === 0);
@@ -173,7 +184,7 @@ export async function getPaywallPackages(appUserId?: string): Promise<PaywallPac
     null;
 
   const introPackage =
-    available.find((pkg) => pkg.identifier === 'yearly_intro') ??
+    available.find((pkg) => pkg.identifier === REVENUECAT_PACKAGES.intro) ??
     available.find((pkg) => {
       const intro = pkg.product.introPrice;
       return Boolean(intro && intro.price > 0);

@@ -1,0 +1,75 @@
+---
+import { APP_STORE_URL, PLAY_STORE_URL } from "@/lib/storeLinks";
+---
+
+<div class="sticky-download md:hidden" id="sticky-download">
+  <a
+    href={APP_STORE_URL}
+    data-ios-url={APP_STORE_URL}
+    data-android-url={PLAY_STORE_URL}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="sticky-download__btn"
+  >
+    Download free
+  </a>
+</div>
+
+<script>
+  const bar = document.getElementById("sticky-download");
+  const hero = document.getElementById("hero");
+  const link = bar?.querySelector("a");
+
+  if (link) {
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid) {
+      link.href = link.dataset.androidUrl ?? link.href;
+      link.textContent = "Get it on Google Play";
+    } else {
+      link.href = link.dataset.iosUrl ?? link.href;
+    }
+  }
+
+  if (bar && hero) {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        bar.classList.toggle("is-visible", !entry.isIntersecting);
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(hero);
+  }
+</script>
+
+<style>
+  .sticky-download {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(12, 10, 8, 0.98), rgba(12, 10, 8, 0.92));
+    border-top: 1px solid rgba(42, 36, 32, 0.95);
+    transform: translateY(110%);
+    transition: transform 0.25s ease;
+  }
+
+  .sticky-download.is-visible {
+    transform: translateY(0);
+  }
+
+  .sticky-download__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.9rem 1rem;
+    border-radius: 0.9rem;
+    background: #c8943c;
+    color: #0c0a08;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+</style>

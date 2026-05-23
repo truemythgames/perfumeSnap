@@ -1,4 +1,6 @@
 ---
+import { APP_STORE_URL, PLAY_STORE_URL } from "@/lib/storeLinks";
+
 const FOOTER_SECTIONS = [
   {
     title: "Product",
@@ -54,9 +56,9 @@ const year = new Date().getFullYear();
     <div class="mt-12 pt-8 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
       <p class="text-xs text-muted-dark">&copy; {year} PerfumeSnap. All rights reserved.</p>
       <div class="flex items-center gap-4">
-        <a href="#download" class="text-xs text-muted hover:text-primary transition-colors">Download for iOS</a>
+        <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer" class="text-xs text-muted hover:text-primary transition-colors">Download for iOS</a>
         <span class="text-border">|</span>
-        <a href="#download" class="text-xs text-muted hover:text-primary transition-colors">Download for Android</a>
+        <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" class="text-xs text-muted hover:text-primary transition-colors">Download for Android</a>
       </div>
     </div>
   </div>

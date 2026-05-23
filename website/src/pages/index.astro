@@ -1,7 +1,8 @@
 ---
 import Base from "@/layouts/Base.astro";
 import DownloadCTA from "@/components/DownloadCTA.astro";
-import StoreButtons from "@/components/StoreButtons.astro";
+import HeroShowcase from "@/components/HeroShowcase.astro";
+import TrustBar from "@/components/TrustBar.astro";
 import { appJsonLd, faqJsonLd } from "@/lib/structured-data";
 
 const FEATURES = [
@@ -37,6 +38,27 @@ const FEATURES = [
   },
 ];
 
+const HOW_IT_WORKS = [
+  {
+    step: "01",
+    title: "Snap a photo",
+    description: "Open the camera and take a photo of any perfume bottle. Or pick one from your gallery.",
+    detail: "Works on designer, niche, and vintage bottles.",
+  },
+  {
+    step: "02",
+    title: "AI identifies it",
+    description: "Our AI analyzes the bottle and label to identify the fragrance in seconds.",
+    detail: "Notes, concentration, family, and character included.",
+  },
+  {
+    step: "03",
+    title: "Explore & save",
+    description: "Get the full profile, compare prices, find similar scents, and save to your collection.",
+    detail: "Direct links to major retailers when available.",
+  },
+];
+
 const FAQ_ITEMS = [
   { question: "How does PerfumeSnap identify perfumes?", answer: "PerfumeSnap uses advanced AI vision technology to analyze the bottle, label, and packaging in your photo. It compares these visual cues against an extensive fragrance database to identify the perfume with high accuracy." },
   { question: "Is PerfumeSnap free to use?", answer: "Yes, PerfumeSnap is free to download and use. You can identify perfumes, view fragrance profiles, and build your collection at no cost." },
@@ -55,31 +77,34 @@ const jsonLd = [appJsonLd(), faqJsonLd(FAQ_ITEMS)];
   jsonLd={jsonLd}
 >
   <!-- Hero -->
-  <section class="relative overflow-hidden">
-    <div class="absolute inset-0 bg-linear-to-b from-primary/5 via-transparent to-transparent"></div>
-    <div class="mx-auto max-w-6xl px-6 pt-24 pb-20 md:pt-36 md:pb-28 relative">
-      <div class="max-w-3xl mx-auto text-center">
-        <div class="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-1.5 mb-8">
-          <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-          <span class="text-xs font-medium text-primary">AI-Powered Fragrance Identification</span>
-        </div>
-        <h1 class="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] mb-6">
-          Identify any perfume <span class="text-transparent bg-clip-text bg-linear-to-r from-primary to-accent">instantly</span>
-        </h1>
-        <p class="text-lg md:text-xl text-muted max-w-2xl mx-auto mb-10 leading-relaxed">
-          Snap a photo of any fragrance bottle and get the full profile — notes, longevity, price comparison, and where to buy. Powered by AI.
-        </p>
-        <DownloadCTA variant="hero" />
-      </div>
+  <section id="hero" class="relative overflow-hidden pb-8 md:pb-12">
+    <div class="absolute inset-0 bg-linear-to-b from-primary/8 via-transparent to-transparent"></div>
+    <div class="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_70%_20%,rgba(200,148,60,0.25),transparent_45%)]"></div>
 
-      <div class="mt-16 flex justify-center">
-        <div class="relative w-64 md:w-72">
-          <div class="absolute -inset-4 bg-linear-to-b from-primary/20 to-transparent rounded-4xl blur-2xl"></div>
-          <img src="/logo.png" alt="PerfumeSnap App" width="288" height="288" class="relative rounded-3xl shadow-2xl shadow-primary/10" />
+    <div class="mx-auto max-w-6xl px-6 pt-20 pb-8 md:pt-28 md:pb-12 relative">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-10 items-center">
+        <div class="text-center md:text-left">
+          <div class="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-1.5 mb-6">
+            <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+            <span class="text-xs font-medium text-primary">Free on iOS & Android</span>
+          </div>
+          <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.08] mb-5">
+            Snap any bottle.<br />
+            <span class="text-transparent bg-clip-text bg-linear-to-r from-primary to-accent">Know everything.</span>
+          </h1>
+          <p class="text-lg text-muted max-w-xl mx-auto md:mx-0 mb-8 leading-relaxed">
+            Identify perfumes in seconds, get notes and market prices, compare retailers, and build your collection — all from one photo.
+          </p>
+          <DownloadCTA variant="hero" />
+          <p class="mt-4 text-xs text-muted-dark">No account required · Private by default</p>
         </div>
+
+        <HeroShowcase />
       </div>
     </div>
   </section>
+
+  <TrustBar />
 
   <!-- Features -->
   <section id="features" class="bg-surface py-24">
@@ -109,16 +134,13 @@ const jsonLd = [appJsonLd(), faqJsonLd(FAQ_ITEMS)];
         <h2 class="text-3xl md:text-4xl font-bold text-foreground mb-4">How it works</h2>
         <p class="text-muted text-lg">Three steps to identify any perfume</p>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {[
-          { step: "01", title: "Snap a photo", description: "Open the camera and take a photo of any perfume bottle. Or pick one from your gallery." },
-          { step: "02", title: "AI identifies it", description: "Our AI analyzes the bottle and label to identify the fragrance in seconds." },
-          { step: "03", title: "Explore & save", description: "Get the full profile, compare prices, find similar scents, and save to your collection." },
-        ].map((item) => (
-          <div class="text-center md:text-left">
-            <span class="text-5xl font-bold text-primary/20">{item.step}</span>
-            <h3 class="text-xl font-semibold text-foreground mt-2 mb-3">{item.title}</h3>
-            <p class="text-muted text-sm leading-relaxed">{item.description}</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {HOW_IT_WORKS.map((item) => (
+          <div class="rounded-2xl border border-border bg-surface/50 p-6 md:p-7">
+            <span class="text-4xl font-bold text-primary/25">{item.step}</span>
+            <h3 class="text-xl font-semibold text-foreground mt-3 mb-2">{item.title}</h3>
+            <p class="text-muted text-sm leading-relaxed mb-3">{item.description}</p>
+            <p class="text-xs text-primary/90 font-medium">{item.detail}</p>
           </div>
         ))}
       </div>
@@ -126,7 +148,7 @@ const jsonLd = [appJsonLd(), faqJsonLd(FAQ_ITEMS)];
   </section>
 
   <!-- FAQ -->
-  <section class="bg-surface py-24">
+  <section class="bg-surface py-24 pb-28 md:pb-24">
     <div class="mx-auto max-w-3xl px-6">
       <div class="text-center mb-16">
         <h2 class="text-3xl md:text-4xl font-bold text-foreground mb-4">Frequently asked questions</h2>
