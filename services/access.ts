@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { getCollection } from './api';
+import { router } from 'expo-router';
 import { isPremiumUser } from './subscription';
 import { getOrCreateUserId } from './user';
 
@@ -32,19 +32,21 @@ async function getTodayScanCount(): Promise<number> {
 }
 
 export async function getScanAllowance(): Promise<ScanAllowance> {
-  const userId = await getOrCreateUserId();
-  const premium = await isPremiumUser(userId);
+  const premium = await getPremiumStatus();
   if (premium) {
     return { allowed: true, isPremium: true, remainingToday: Number.MAX_SAFE_INTEGER };
   }
+  return { allowed: false, isPremium: false, remainingToday: 0 };
+}
 
-  const count = await getTodayScanCount();
-  const remaining = Math.max(0, FREE_DAILY_SCAN_LIMIT - count);
-  return {
-    allowed: remaining > 0,
-    isPremium: false,
-    remainingToday: remaining,
-  };
+/** Opens the paywall and returns false when the user has no premium access. */
+export async function requirePremium(): Promise<boolean> {
+  const premium = await getPremiumStatus();
+  if (!premium) {
+    router.push('/sales');
+    return false;
+  }
+  return true;
 }
 
 export async function consumeScanIfNeeded(): Promise<void> {
@@ -62,21 +64,8 @@ export async function getPremiumStatus(): Promise<boolean> {
 }
 
 export async function canAddToCollection(): Promise<{ allowed: boolean; isPremium: boolean; limit: number }> {
-  const userId = await getOrCreateUserId();
-  const premium = await isPremiumUser(userId);
-  if (premium) return { allowed: true, isPremium: true, limit: FREE_COLLECTION_LIMIT };
-
-  try {
-    const page = await getCollection({ limit: FREE_COLLECTION_LIMIT + 1 });
-    return {
-      allowed: page.items.length < FREE_COLLECTION_LIMIT,
-      isPremium: false,
-      limit: FREE_COLLECTION_LIMIT,
-    };
-  } catch {
-    // Fail open here so network hiccups do not block saving.
-    return { allowed: true, isPremium: false, limit: FREE_COLLECTION_LIMIT };
-  }
+  const premium = await getPremiumStatus();
+  return { allowed: premium, isPremium: premium, limit: FREE_COLLECTION_LIMIT };
 }
 
 export const FREE_LIMITS = {

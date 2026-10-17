@@ -21,11 +21,13 @@ import Animated, {
 import { BorderRadius, Colors, FontSizes, Spacing } from '../constants/theme';
 import { useArticles } from '../hooks/useArticles';
 import { getArticleById } from '../constants/articles';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_HEIGHT = 300;
 
 export default function ArticleScreen() {
+  useRequirePremium();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string }>();
   const { articles } = useArticles();

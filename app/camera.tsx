@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
-  Alert,
   Platform,
   Linking,
   Modal,
@@ -30,7 +29,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { trackPhotoTaken, trackGalleryPick, trackScreenView } from '../services/analytics';
-import { consumeScanIfNeeded, FREE_LIMITS, getScanAllowance } from '../services/access';
+import { consumeScanIfNeeded, requirePremium } from '../services/access';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
 import { setPickedImageBase64 } from '../services/imageTransfer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -44,6 +44,7 @@ const SLIDER_H_PAD = 56;
 const TRACK_WIDTH = SCREEN_WIDTH - (SLIDER_H_PAD * 2) - 80 - 32;
 
 export default function CameraScreen() {
+  useRequirePremium();
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
@@ -136,18 +137,7 @@ export default function CameraScreen() {
 
   const takePicture = async () => {
     if (!cameraRef.current || capturing) return;
-    const allowance = await getScanAllowance();
-    if (!allowance.allowed) {
-      Alert.alert(
-        'Daily Scan Limit Reached',
-        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Unlock', onPress: () => router.push('/sales') },
-        ],
-      );
-      return;
-    }
+    if (!(await requirePremium())) return;
     setCapturing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
@@ -183,18 +173,7 @@ export default function CameraScreen() {
 
   const pickFromLibrary = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const allowance = await getScanAllowance();
-    if (!allowance.allowed) {
-      Alert.alert(
-        'Daily Scan Limit Reached',
-        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Unlock', onPress: () => router.push('/sales') },
-        ],
-      );
-      return;
-    }
+    if (!(await requirePremium())) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Linking.openSettings();

@@ -35,8 +35,9 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
-import { requestNativeAppReview } from '../services/appReview';
 import { Colors, Spacing, FontSizes, BorderRadius } from '../constants/theme';
+import UserReviewsScreen from './UserReviewsScreen';
+import SalesScreen from '../app/sales';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -45,24 +46,23 @@ const LOGO_SIZE = 319;
 const TERMS_URL = 'https://perfumesnap.app/terms';
 const PRIVACY_URL = 'https://perfumesnap.app/privacy';
 const WELCOME_HOLD_MS = 0;
-const PHOTO_SETTLE_BEFORE_FRAME_MS = 220;
-const WELCOME_FRAME_FADE_MS = 1800;
-const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS + 500;
+const PHOTO_SETTLE_BEFORE_FRAME_MS = 150;
+const WELCOME_FRAME_FADE_MS = 1200;
+const WELCOME_TO_RECOGNITION_DELAY_MS = WELCOME_FRAME_FADE_MS + 320;
 const FINAL_IMAGE_START_Y = 210;
-const IMAGE_TRANSITION_MS = 1200;
+const IMAGE_TRANSITION_MS = 850;
 const TOP_SECTION_HEIGHT = SCREEN_HEIGHT * 0.54;
 const PHOTO_FRAME_HEIGHT = SCREEN_WIDTH * 0.82;
 const SHINE_SWEEP_HEIGHT = SCREEN_HEIGHT * 0.5;
-const EASY_TO_VALUATION_DELAY_MS = 7000;
+const EASY_TO_VALUATION_DELAY_MS = 4800;
 const VALUATION_TARGET_PRICE = 560;
-const CONFETTI_BURST_DURATION_MS = 1500;
-const CONFETTI_FADE_OUT_MS = 320;
+const CONFETTI_BURST_DURATION_MS = 1100;
+const CONFETTI_FADE_OUT_MS = 240;
 const VALUATION_COUNT_STEPS = 40;
-const VALUATION_COUNT_INTERVAL_MS = 50;
+const VALUATION_COUNT_INTERVAL_MS = 35;
 const VALUATION_COUNT_DURATION_MS = VALUATION_COUNT_STEPS * VALUATION_COUNT_INTERVAL_MS;
-const VALUATION_TO_COLLECTION_DELAY_MS = VALUATION_COUNT_DURATION_MS + CONFETTI_BURST_DURATION_MS + 650;
-const COLLECTION_TO_RATE_DELAY_MS = 4000;
-const RATE_REVIEW_PROMPT_DELAY_MS = 1200;
+const VALUATION_TO_COLLECTION_DELAY_MS = VALUATION_COUNT_DURATION_MS + CONFETTI_BURST_DURATION_MS + 420;
+const COLLECTION_TO_REVIEWS_DELAY_MS = 2700;
 const COLLECTION_FRAME_TARGET_SCALE = 0.45;
 const COLLECTION_FRAME_BASE_WIDTH = SCREEN_WIDTH * 0.62;
 const COLLECTION_FRAME_BASE_HEIGHT = PHOTO_FRAME_HEIGHT;
@@ -129,7 +129,6 @@ const PERFUMES: Array<{ name: string; icon: IoniconsName; colors: [string, strin
 const FINAL_PERFUME_IMAGE = require('../assets/images/onboarding-video-lastframe.png');
 const ONBOARDING_VIDEO = require('../assets/videos/onboarding-intro.mp4');
 const LOADING_VIDEO = require('../assets/videos/loading-bg.mp4');
-const RATE_US_BG = require('../assets/images/rate-us-bg.png');
 const COLLECTION_CARD_IMAGES = [
   require('../assets/images/onboarding-perfume-3.png'),
   require('../assets/images/onboarding-perfume-6.png'),
@@ -502,7 +501,6 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const collectionFrameProgress = useSharedValue(0);
   const collectionLeadCardProgress = useSharedValue(0);
   const collectionMoreRowsProgress = useSharedValue(0);
-  const rateUsOpacity = useSharedValue(0);
   const loadingOpacity = useSharedValue(0);
   const loadingLine1 = useSharedValue(0);
   const loadingLine2 = useSharedValue(0);
@@ -582,29 +580,29 @@ export default function OnboardingFlow({ onComplete }: Props) {
         setTimeout(() => {
           if (cancelled) return;
           scanAlpha.value = withTiming(1, { duration: 200 });
-          scanProgress.value = withTiming(1, { duration: 1200, easing: Easing.linear });
-        }, 700),
+          scanProgress.value = withTiming(1, { duration: 850, easing: Easing.linear });
+        }, 480),
       );
 
       timers.push(
         setTimeout(() => {
           if (cancelled) return;
           scanAlpha.value = withTiming(0, { duration: 200 });
-          resultAlpha.value = withTiming(1, { duration: 300 });
-        }, 2000),
+          resultAlpha.value = withTiming(1, { duration: 220 });
+        }, 1400),
       );
 
       timers.push(
         setTimeout(() => {
           if (cancelled) return;
           bracketAlpha.value = withTiming(0, { duration: 300 });
-          resultAlpha.value = withTiming(0, { duration: 300 });
-        }, 3500),
+          resultAlpha.value = withTiming(0, { duration: 220 });
+        }, 2450),
       );
     };
 
     loop();
-    const interval = setInterval(loop, 4200);
+    const interval = setInterval(loop, 2950);
 
     return () => {
       cancelled = true;
@@ -641,12 +639,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
     welcomeTitleSlide.value = 0;
     welcomeSubtitleSlide.value = 0;
     welcomeTitleSlide.value = withDelay(
-      400,
-      withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
+      260,
+      withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }),
     );
     welcomeSubtitleSlide.value = withDelay(
-      600,
-      withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }),
+      400,
+      withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }),
     );
     sharedImageProgress.value = withTiming(
       1,
@@ -935,45 +933,23 @@ export default function OnboardingFlow({ onComplete }: Props) {
     collectionFrameProgress.value = 0;
     collectionLeadCardProgress.value = 0;
     collectionMoreRowsProgress.value = 0;
-    collectionFrameProgress.value = withTiming(1, { duration: 820, easing: Easing.out(Easing.cubic) });
+    collectionFrameProgress.value = withTiming(1, { duration: 580, easing: Easing.out(Easing.cubic) });
     collectionLeadCardProgress.value = withDelay(
-      830,
-      withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) }),
+      560,
+      withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }),
     );
     collectionMoreRowsProgress.value = withDelay(
-      980,
-      withTiming(1, { duration: 1600, easing: Easing.out(Easing.cubic) }),
+      680,
+      withTiming(1, { duration: 1100, easing: Easing.out(Easing.cubic) }),
     );
     recognitionContentOpacity.value = 0;
     recognitionContentOpacity.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
 
-    const rateTimer = setTimeout(() => {
+    const reviewsTimer = setTimeout(() => {
       setStep(7);
-    }, COLLECTION_TO_RATE_DELAY_MS);
+    }, COLLECTION_TO_REVIEWS_DELAY_MS);
 
-    return () => clearTimeout(rateTimer);
-  }, [step]);
-
-  useEffect(() => {
-    if (step !== 7) return;
-    rateUsOpacity.value = 0;
-    rateUsOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) });
-    stepTitleSlide.value = 0;
-    stepSubtitleSlide.value = 0;
-    stepTitleSlide.value = withDelay(
-      200,
-      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
-    );
-    stepSubtitleSlide.value = withDelay(
-      400,
-      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
-    );
-
-    const reviewTimer = setTimeout(() => {
-      void requestNativeAppReview();
-    }, RATE_REVIEW_PROMPT_DELAY_MS);
-
-    return () => clearTimeout(reviewTimer);
+    return () => clearTimeout(reviewsTimer);
   }, [step]);
 
   useEffect(() => {
@@ -993,31 +969,31 @@ export default function OnboardingFlow({ onComplete }: Props) {
       withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
     );
     loadingPercent.value = withSequence(
-      withDelay(300, withTiming(30, { duration: 1600, easing: Easing.out(Easing.cubic) })),
-      withDelay(200, withTiming(65, { duration: 1600, easing: Easing.out(Easing.cubic) })),
-      withDelay(200, withTiming(100, { duration: 1600, easing: Easing.out(Easing.cubic) })),
+      withDelay(200, withTiming(30, { duration: 1100, easing: Easing.out(Easing.cubic) })),
+      withDelay(140, withTiming(65, { duration: 1100, easing: Easing.out(Easing.cubic) })),
+      withDelay(140, withTiming(100, { duration: 1100, easing: Easing.out(Easing.cubic) })),
     );
     loadingLine1.value = withDelay(
-      1200,
-      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+      800,
+      withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }),
     );
     loadingLine2.value = withDelay(
-      3200,
-      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+      2100,
+      withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }),
     );
     loadingLine3.value = withDelay(
-      5000,
-      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+      3400,
+      withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }),
     );
     loadingBtnOpacity.value = withDelay(
-      6000,
-      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+      4200,
+      withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }),
     );
 
     const hapticInterval = setInterval(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    }, 200);
-    const hapticTimer = setTimeout(() => clearInterval(hapticInterval), 6000);
+    }, 160);
+    const hapticTimer = setTimeout(() => clearInterval(hapticInterval), 4200);
 
     return () => {
       clearInterval(hapticInterval);
@@ -1190,9 +1166,6 @@ export default function OnboardingFlow({ onComplete }: Props) {
       { translateX: interpolate(stepSubtitleSlide.value, [0, 1], [40, 0]) },
     ],
   }));
-  const rateUsFade = useAnimatedStyle(() => ({
-    opacity: rateUsOpacity.value,
-  }));
   const loadingFade = useAnimatedStyle(() => ({
     opacity: loadingOpacity.value,
   }));
@@ -1254,7 +1227,6 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const isEasyPhotoPhase = step === 4;
   const isValuationPhase = step === 5;
   const isCollectionPhase = step === 6;
-  const isRatePhase = step === 7;
 
   return (
     <View style={st.root}>
@@ -1502,40 +1474,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
         resizeMode="cover"
       />
 
-      {/* ── Step 7: Rate Us ── */}
-      {isRatePhase && (
-        <Animated.View
-          style={[st.layer, st.rateUsOverlay, rateUsFade, { paddingBottom: insets.bottom + Spacing.lg, zIndex: 20 }]}
-          pointerEvents="auto"
-        >
-          <Image source={RATE_US_BG} style={st.rateUsBgImage} resizeMode="cover" />
-          <View style={st.rateUsBgOverlay} />
-          <View style={st.rateUsContent}>
-            <View style={st.starsRow}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <Ionicons key={i} name="star" size={40} color="#d4a54a" />
-              ))}
-            </View>
-            <Animated.View style={stepTitleStyle}>
-              <Text style={st.rateUsTitle}>Help Us Grow</Text>
-            </Animated.View>
-            <Animated.View style={stepSubtitleStyle}>
-              <Text style={st.rateUsSubtitle}>
-                A quick review means the world to us!
-              </Text>
-            </Animated.View>
-          </View>
-          <TouchableOpacity
-            style={st.rateUsContinue}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setStep(8);
-            }}
-            activeOpacity={0.85}
-          >
-            <Text style={st.rateUsContinueTxt}>Continue</Text>
-          </TouchableOpacity>
-        </Animated.View>
+      {step === 7 && <UserReviewsScreen onContinue={() => setStep(8)} />}
+
+      {step === 9 && (
+        <View style={st.onboardingSales}>
+          <SalesScreen source="onboarding" onDismiss={onComplete} />
+        </View>
       )}
 
       {/* ── Step 8: Personalization Loading ── */}
@@ -1585,7 +1529,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
               style={st.loadingContinueBtn}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onComplete();
+                setStep(9);
               }}
               activeOpacity={0.85}
             >
@@ -1648,6 +1592,11 @@ export default function OnboardingFlow({ onComplete }: Props) {
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#ffffff' },
+  onboardingSales: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40,
+    backgroundColor: '#000',
+  },
   layer: { ...StyleSheet.absoluteFillObject },
   welcomeBg: { backgroundColor: '#ffffff' },
 
@@ -2069,76 +2018,6 @@ const st = StyleSheet.create({
   badgeText: {
     color: Colors.text,
     fontSize: FontSizes.sm,
-    fontWeight: '700',
-  },
-
-  /* ── Rate us ── */
-  rateUsOverlay: {
-    backgroundColor: '#000',
-  },
-  rateUsBgImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  rateUsBgOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  rateUsContent: {
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    flex: 1,
-    justifyContent: 'flex-start',
-    paddingTop: SCREEN_HEIGHT * 0.15,
-  },
-  starsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 20,
-  },
-  rateUsTitle: {
-    fontFamily: 'PlayfairDisplay',
-    fontSize: 28,
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  rateUsSubtitle: {
-    fontSize: FontSizes.md,
-    color: 'rgba(255,255,255,0.7)',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 32,
-  },
-  rateUsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#d4a54a',
-    paddingVertical: 16,
-    paddingHorizontal: 40,
-    borderRadius: BorderRadius.full,
-    marginHorizontal: 24,
-    marginBottom: 12,
-    alignSelf: 'stretch',
-  },
-  rateUsBtnTxt: {
-    color: '#fff',
-    fontSize: FontSizes.lg,
-    fontWeight: '700',
-  },
-  rateUsContinue: {
-    backgroundColor: '#9a7b4f',
-    borderRadius: BorderRadius.xl,
-    paddingVertical: 18,
-    marginHorizontal: 24,
-    alignSelf: 'stretch',
-    alignItems: 'center',
-  },
-  rateUsContinueTxt: {
-    color: '#fff',
-    fontSize: FontSizes.lg,
     fontWeight: '700',
   },
 

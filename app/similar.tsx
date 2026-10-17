@@ -14,7 +14,7 @@ import { getSimilarListings, openSimilarListing, hasValidSimilarListings, filter
 import { getResultPrefill } from '../services/resultNavigationCache';
 import { Colors, FontSizes, Spacing } from '../constants/theme';
 import { trackScreenView, trackRetailerTap } from '../services/analytics';
-import { usePremiumStatus } from '../hooks/usePremiumStatus';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
 import SimilarProductCard, {
   getListingTitle,
   splitIntoMasonryColumns,
@@ -29,7 +29,7 @@ export default function SimilarScreen() {
 
   const [perfumes, setPerfumes] = useState<Awaited<ReturnType<typeof getSimilarListings>>>([]);
   const [loading, setLoading] = useState(true);
-  const { isPremium, checked: premiumChecked } = usePremiumStatus();
+  const { isPremium, checked: premiumChecked } = useRequirePremium();
 
   useEffect(() => {
     trackScreenView('similar');

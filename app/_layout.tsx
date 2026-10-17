@@ -12,8 +12,10 @@ import analytics from '@react-native-firebase/analytics';
 import { initRevenueCat, isPremiumUser } from '../services/subscription';
 import { getOrCreateUserId } from '../services/user';
 import { isPaywallDismissedForSession, dismissPaywallForSession } from '../services/paywall';
+import { offerShouldOpen, whenDealTimerReady } from '../services/dealTimer';
 import { ONBOARDING_KEY, subscribeToLocalAccountReset } from '../services/localReset';
 import OnboardingFlow from '../components/OnboardingFlow';
+import { armReviewForInitialTabs, cancelArmedReview } from '../services/appReview';
 import { getPreferredCurrency } from '../services/currency';
 import { prefetchExchangeRates } from '../services/exchangeRates';
 
@@ -65,7 +67,8 @@ export default function RootLayout() {
           if (!isPaywallDismissedForSession()) {
             try {
               const premium = await isPremiumUser(userId);
-              if (!premium) {
+              await whenDealTimerReady();
+              if (!premium && !offerShouldOpen()) {
                 dismissPaywallForSession();
                 setShowSalesOnMount(true);
               }
@@ -92,6 +95,7 @@ export default function RootLayout() {
       setOnboardingDone(false);
       setAppReady(false);
       setShowSalesOnMount(false);
+      cancelArmedReview();
     });
   }, []);
 
@@ -106,18 +110,15 @@ export default function RootLayout() {
     const userId = await getOrCreateUserId();
     await initRevenueCat(userId);
 
-    let needsSales = false;
     if (!isPaywallDismissedForSession()) {
       try {
         const premium = await isPremiumUser(userId);
-        if (!premium) {
-          dismissPaywallForSession();
-          needsSales = true;
-        }
+        if (!premium) dismissPaywallForSession();
       } catch { /* ignore */ }
     }
 
-    setShowSalesOnMount(needsSales);
+    armReviewForInitialTabs();
+    setShowSalesOnMount(false);
     setOnboardingDone(true);
     setAppReady(true);
   };

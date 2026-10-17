@@ -32,6 +32,7 @@ import InfoRow from './InfoRow';
 import SimilarCardSmall, { RESULT_SIMILAR_SECTION } from './SimilarCardSmall';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { getSimilarListings, openSimilarListing, PerfumeResult, SimilarPerfume, hasValidSimilarListings, filterValidSimilarListings } from '../services/api';
+import { getPremiumStatus } from '../services/access';
 import { getResultPrefill } from '../services/resultNavigationCache';
 import { trackChatOpened, trackRetailerTap, trackScreenView, trackViewSimilar } from '../services/analytics';
 import {
@@ -87,9 +88,14 @@ export default function CollectionDetailView({ prefillKey, imageUri }: Props) {
     if (!result) return;
     const cached = prefill?.cachedSimilarListings ?? similarListings;
     if (hasValidSimilarListings(cached)) return;
-    getSimilarListings(result.name, result.brand).then((fresh) => {
-      if (fresh.length > 0) setSimilarListings(filterValidSimilarListings(fresh));
+    let cancelled = false;
+    void getPremiumStatus().then((premium) => {
+      if (!premium || cancelled) return;
+      return getSimilarListings(result.name, result.brand).then((fresh) => {
+        if (!cancelled && fresh.length > 0) setSimilarListings(filterValidSimilarListings(fresh));
+      });
     });
+    return () => { cancelled = true; };
   }, [result?.name, result?.brand, prefill?.cachedSimilarListings]);
 
   const openPhotoFullscreen = useCallback(() => {

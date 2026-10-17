@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Platform,
   Dimensions,
-  Alert,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,8 +27,10 @@ import ScanCoachmark, { type CoachmarkAnchor } from '../components/ScanCoachmark
 import ExportSheet from '../components/ExportSheet';
 import { Colors, Spacing, FontSizes } from '../constants/theme';
 import { trackCameraOpened, trackTabSwitch } from '../services/analytics';
-import { FREE_LIMITS, getScanAllowance } from '../services/access';
+import { getCachedPremiumStatus } from '../services/subscription';
 import { hasSeenScanCoachmark, markScanCoachmarkSeen } from '../services/coachmark';
+import { presentArmedReviewFromTabs } from '../services/appReview';
+import GiftDeal from '../components/GiftDeal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAMERA_BTN_SIZE = 70;
@@ -57,6 +58,13 @@ export default function MainScreen() {
     hasSeenScanCoachmark().then((seen) => {
       if (!seen) setShowScanCoachmark(true);
     });
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      presentArmedReviewFromTabs();
+    }, 800);
+    return () => clearTimeout(timer);
   }, []);
 
   const measureCameraAnchor = useCallback(() => {
@@ -177,19 +185,11 @@ export default function MainScreen() {
     transform: [{ translateX: translateX.value }],
   }));
 
-  const handleCamera = async () => {
+  const handleCamera = () => {
     if (showScanCoachmark) dismissScanCoachmark();
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const allowance = await getScanAllowance();
-    if (!allowance.allowed) {
-      Alert.alert(
-        'Daily Scan Limit Reached',
-        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Unlock', onPress: () => router.push('/sales') },
-        ],
-      );
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (!getCachedPremiumStatus()) {
+      router.push('/sales');
       return;
     }
     trackCameraOpened();
@@ -318,6 +318,8 @@ export default function MainScreen() {
           </TouchableOpacity>
         </View>
       </Animated.View>
+
+      <GiftDeal />
 
       <ScanCoachmark
         visible={showScanCoachmark && activeTab === 0}

@@ -15,7 +15,6 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
-  Alert,
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,7 +57,8 @@ import {
   trackResultFeedback,
   trackPriceFeedback,
 } from '../services/analytics';
-import { canAddToCollection, FREE_LIMITS } from '../services/access';
+import { requirePremium } from '../services/access';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
 import { addToHistory } from '../services/history';
 import { getResultPrefill } from '../services/resultNavigationCache';
 import { usePreferredCurrency } from '../hooks/usePreferredCurrency';
@@ -167,6 +167,7 @@ const PARTICLE_DELAYS = Array.from({ length: PARTICLE_COUNT }, (_, i) =>
 );
 
 export default function ResultScreen() {
+  useRequirePremium();
   const params = useLocalSearchParams<{
     imageUri?: string;
     prefill?: string;
@@ -640,6 +641,7 @@ export default function ResultScreen() {
 
   const identify = useCallback(async () => {
     if (!imageUri) return;
+    if (!(await requirePremium())) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -684,6 +686,7 @@ export default function ResultScreen() {
 
   const doLookup = useCallback(async () => {
     if (!lookupName) return;
+    if (!(await requirePremium())) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -766,18 +769,7 @@ export default function ResultScreen() {
   const handleSave = async () => {
     if (!result || savedToCollection || saving) return;
     if (!displayImageUri) return;
-    const collectionAllowance = await canAddToCollection();
-    if (!collectionAllowance.allowed) {
-      Alert.alert(
-        'Collection Limit Reached',
-        `Free plan allows up to ${FREE_LIMITS.collection} saved perfumes. Unlock Premium for unlimited collection history.`,
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Unlock', onPress: () => router.push('/sales') },
-        ],
-      );
-      return;
-    }
+    if (!(await requirePremium())) return;
     setSaving(true);
     try {
       const uploaded = await uploadImage(displayImageUri);

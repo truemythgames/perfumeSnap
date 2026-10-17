@@ -14,6 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
+import { getPremiumStatus } from '../services/access';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { HistoryItem, getHistory, clearHistory } from '../services/history';
 import { historyPrefillKey, setResultPrefill, syncHistoryPrefillCache } from '../services/resultNavigationCache';
@@ -32,6 +34,7 @@ function getPriceDisplay(item: HistoryItem, currencyCode: string): string | null
 }
 
 export default function HistoryScreen() {
+  useRequirePremium();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +47,10 @@ export default function HistoryScreen() {
     useCallback(() => {
       let active = true;
       (async () => {
+        if (!(await getPremiumStatus())) {
+          if (active) setLoading(false);
+          return;
+        }
         const data = await getHistory();
         if (active) {
           setItems(data);

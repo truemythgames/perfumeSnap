@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
+import { getPremiumStatus } from '../services/access';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { CollectionItem, getCollection } from '../services/api';
 import { collectionPrefillKey, setResultPrefill, syncCollectionPrefillCache } from '../services/resultNavigationCache';
@@ -62,6 +64,7 @@ function computePriceDisplay(item: CollectionItem, currencyCode: string): string
 }
 
 export default function SearchScreen() {
+  useRequirePremium();
   const insets = useSafeAreaInsets();
   const [allItems, setAllItems] = useState<CollectionItem[]>([]);
   const [query, setQuery] = useState('');
@@ -72,6 +75,7 @@ export default function SearchScreen() {
     useCallback(() => {
       let active = true;
       (async () => {
+        if (!(await getPremiumStatus())) return;
         const page = await getCollection({ limit: 500 });
         if (active) setAllItems(page.items);
       })();

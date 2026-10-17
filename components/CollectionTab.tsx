@@ -36,7 +36,7 @@ import { CollectionItem, getCollection, deleteFromCollection } from '../services
 import { collectionPrefillKey, setResultPrefill, syncCollectionPrefillCache } from '../services/resultNavigationCache';
 import { trackDeleteFromCollection, trackEvent } from '../services/analytics';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
-import { FREE_LIMITS } from '../services/access';
+import { requirePremium } from '../services/access';
 import { getCurrencySymbol } from '../services/currency';
 import { convertFromUsd } from '../services/exchangeRates';
 import { usePreferredCurrency } from '../hooks/usePreferredCurrency';
@@ -513,7 +513,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const { isPremium } = usePremiumStatus();
+  const { isPremium, checked: premiumChecked } = usePremiumStatus();
   const preferredCurrency = usePreferredCurrency();
   const currencySymbol = getCurrencySymbol(preferredCurrency);
   const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -522,6 +522,14 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const [filterModalVisible, setFilterModalVisible] = useState(false);
 
   const load = useCallback(async (showSpinner = true) => {
+    if (!premiumChecked) return;
+    if (!isPremium) {
+      setItems([]);
+      setNextCursor(null);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     if (showSpinner) setLoading(true);
     setError(null);
     try {
@@ -534,7 +542,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [premiumChecked, isPremium]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
@@ -809,9 +817,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
       </View>
       {!isPremium ? (
         <View style={styles.limitBanner}>
-          <Text style={styles.limitBannerText}>
-            Free collection: {stats.count}/{FREE_LIMITS.collection}
-          </Text>
+          <Text style={styles.limitBannerText}>Premium is required to use your collection</Text>
           <TouchableOpacity onPress={() => router.push('/sales')} style={styles.limitBannerBtn}>
             <Text style={styles.limitBannerBtnText}>Unlock</Text>
           </TouchableOpacity>
@@ -832,6 +838,8 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
   const isToolbarRow = (row: ListRow): row is ToolbarRow => '__toolbar' in row;
 
   const openCollectionDetail = useCallback((item: CollectionItem) => {
+    void requirePremium().then((ok) => {
+      if (!ok) return;
     const key = collectionPrefillKey(item.id);
     setResultPrefill(key, {
       ...item.perfume,
@@ -850,6 +858,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
         perfume_name: item.perfume.name || '',
         perfume_brand: item.perfume.brand || '',
       });
+    });
     });
   }, []);
 
@@ -938,6 +947,19 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
               <Text style={styles.retryBtnText}>Try again</Text>
             </TouchableOpacity>
           </View>
+        ) : premiumChecked && !isPremium ? (
+          <View style={styles.centerState}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="lock-closed-outline" size={56} color={Colors.primary} />
+            </View>
+            <Text style={styles.emptyTitle}>Premium required</Text>
+            <Text style={styles.emptyText}>
+              Unlock PerfumeSnap to scan bottles,{'\n'}save them, and track your collection
+            </Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={() => router.push('/sales')}>
+              <Text style={styles.retryBtnText}>Unlock Premium</Text>
+            </TouchableOpacity>
+          </View>
         ) : items.length === 0 ? (
           <View style={styles.centerState}>
             <View style={styles.emptyIcon}>
@@ -950,7 +972,7 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
             <TouchableOpacity
               style={styles.emptyButton}
               activeOpacity={0.85}
-              onPress={() => router.push('/camera')}
+              onPress={() => { void requirePremium().then((ok) => { if (ok) router.push('/camera'); }); }}
             >
               <Ionicons name="scan" size={18} color="#fff" />
               <Text style={styles.emptyButtonText}>Snap a Perfume</Text>
@@ -997,12 +1019,12 @@ const CollectionTab = forwardRef<CollectionTabHandle, CollectionTabProps>(
           <Animated.View style={[StyleSheet.absoluteFill, styles.iconBarFill, heroBlurStyle]} pointerEvents="none" />
           <View style={styles.headerIcons}>
             {items.length > 0 && (
-              <TouchableOpacity hitSlop={8} onPress={() => router.push('/search')}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
+              <TouchableOpacity hitSlop={8} onPress={() => { void requirePremium().then((ok) => { if (ok) router.push('/search'); }); }}><Ionicons name="search-outline" size={22} color={Colors.text} /></TouchableOpacity>
             )}
             {items.length > 0 && (
               <TouchableOpacity hitSlop={8} onPress={() => onRequestExport?.([], items.length)}><Ionicons name="share-outline" size={22} color={Colors.text} /></TouchableOpacity>
             )}
-            <TouchableOpacity hitSlop={8} onPress={() => router.push('/history')}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
+            <TouchableOpacity hitSlop={8} onPress={() => { void requirePremium().then((ok) => { if (ok) router.push('/history'); }); }}><Ionicons name="time-outline" size={22} color={Colors.text} /></TouchableOpacity>
             <TouchableOpacity hitSlop={8} onPress={() => router.push('/settings')}><Ionicons name="ellipsis-horizontal" size={22} color={Colors.text} /></TouchableOpacity>
           </View>
         </View>

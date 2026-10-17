@@ -9,7 +9,6 @@ import {
   ScrollView,
   Dimensions,
   Platform,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,7 +27,8 @@ import Animated, {
 import { isApiConfigured } from '../services/api';
 import { Colors, FontSizes, Spacing, BorderRadius } from '../constants/theme';
 import { trackCameraOpened } from '../services/analytics';
-import { FREE_LIMITS, getScanAllowance } from '../services/access';
+import { requirePremium } from '../services/access';
+import { getCachedPremiumStatus } from '../services/subscription';
 import { useArticles } from '../hooks/useArticles';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -137,26 +137,19 @@ export default function HomeTab({ pressEnabled = true }: HomeTabProps) {
       };
     });
 
-  const handleCamera = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const allowance = await getScanAllowance();
-    if (!allowance.allowed) {
-      Alert.alert(
-        'Daily Scan Limit Reached',
-        `Free plan includes ${FREE_LIMITS.dailyScans} scans per day. Unlock Premium for unlimited scans.`,
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Unlock', onPress: () => router.push('/sales') },
-        ],
-      );
+  const handleCamera = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (!getCachedPremiumStatus()) {
+      router.push('/sales');
       return;
     }
     trackCameraOpened();
     router.push('/camera');
   };
 
-  const openArticle = (id: string) => {
+  const openArticle = async (id: string) => {
     if (!pressEnabled) return;
+    if (!(await requirePremium())) return;
     router.push({ pathname: '/article', params: { id } });
   };
 
@@ -283,7 +276,9 @@ export default function HomeTab({ pressEnabled = true }: HomeTabProps) {
           disabled={!pressEnabled}
           onPress={() => {
             if (!pressEnabled) return;
-            router.push('/articles');
+            void requirePremium().then((ok) => {
+              if (ok) router.push('/articles');
+            });
           }}
         >
           <Text style={styles.readMoreText}>Read more</Text>

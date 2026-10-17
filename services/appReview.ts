@@ -16,6 +16,29 @@ export async function isNativeReviewAvailable(): Promise<boolean> {
   }
 }
 
+let reviewArmedForTabs = false;
+let afterTabsReview: (() => void) | null = null;
+
+/** Ask for a review the next time the main tabs mount. Not before. */
+export function armReviewForInitialTabs(afterPresent?: () => void) {
+  reviewArmedForTabs = true;
+  afterTabsReview = afterPresent ?? null;
+}
+
+export function cancelArmedReview() {
+  reviewArmedForTabs = false;
+  afterTabsReview = null;
+}
+
+/** Called from the tab screen after it has mounted. No-op on later launches. */
+export function presentArmedReviewFromTabs() {
+  if (!reviewArmedForTabs) return;
+  reviewArmedForTabs = false;
+  const done = afterTabsReview;
+  afterTabsReview = null;
+  void requestNativeAppReview().finally(() => done?.());
+}
+
 /** Best-effort native popup. Apple may still suppress it; never blocks UI. */
 export async function requestNativeAppReview(): Promise<void> {
   if (Platform.OS !== 'ios') return;

@@ -15,66 +15,56 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Purchases, { PurchasesPackage } from 'react-native-purchases';
+import * as SecureStore from 'expo-secure-store';
 import { BorderRadius, Colors, FontSizes, Spacing } from '../constants/theme';
-import { getPaywallPackages, hasPremiumEntitlement, notifyPremiumStatusChanged } from '../services/subscription';
+import DealSheet from '../components/DealSheet';
+import { dealExpired, dismissOfferForSession, offerShouldOpen, startDealTimer, useDealEndsAt } from '../services/dealTimer';
+import {
+  loadPaywall,
+  purchasePackage,
+  restorePurchases,
+  type PaywallPlan,
+} from '../services/subscription';
 import { getOrCreateUserId } from '../services/user';
 import { dismissPaywallForSession } from '../services/paywall';
 
-type PlanId = 'trial' | 'intro';
+type SalesSource = 'onboarding' | 'app';
 
-const INITIAL_REVEAL_STEP_MS = 320;
-const REVEAL_ACCELERATION_FACTOR = 0.86;
-const MIN_REVEAL_STEP_MS = 110;
+type SalesScreenProps = {
+  /** When set, this paywall is an onboarding step and does not navigate. */
+  onDismiss?: () => void;
+  /** Onboarding sells the two quarterly plans. The in-app page sells weekly and quarterly. */
+  source?: SalesSource;
+};
+
+/** Closing the onboarding deal with its own × declines it for the rest of this launch. */
+let onboardingDealDeclined = false;
+const APP_DEAL_SEEN_KEY = 'perfumesnap_upgrade_deal_seen';
+
+const INITIAL_REVEAL_STEP_MS = 220;
+const REVEAL_ACCELERATION_FACTOR = 0.82;
+const MIN_REVEAL_STEP_MS = 80;
 const TERMS_URL = 'https://perfumesnap.app/terms';
 const PRIVACY_URL = 'https://perfumesnap.app/privacy';
 const SUBSCRIPTION_TERMS_URL = 'https://perfumesnap.app/terms';
 
-function formatPeriod(unit: string, count: number) {
-  const normalized = unit.toLowerCase();
-  const base = normalized === 'day' ? 'day' : normalized === 'week' ? 'week' : normalized === 'month' ? 'month' : normalized === 'year' ? 'year' : 'period';
-  return `${count} ${base}${count === 1 ? '' : 's'}`;
-}
-
-function getTrialPeriodLabel(pkg: PurchasesPackage | null) {
-  const intro = pkg?.product.introPrice;
-  if (!intro) return '3 days';
-  return formatPeriod(intro.periodUnit, intro.periodNumberOfUnits);
-}
-
-function getIntroPeriodLabel(pkg: PurchasesPackage | null) {
-  const intro = pkg?.product.introPrice;
-  if (!intro) return 'Intro offer';
-  return formatPeriod(intro.periodUnit, intro.periodNumberOfUnits);
-}
-
-function getAnnualRenewalText(annualPackage: PurchasesPackage | null, fallbackPackage: PurchasesPackage | null) {
-  const source = annualPackage?.product ?? fallbackPackage?.product ?? null;
-  if (!source) return 'then €44.99/yr(~€3.75/mo)';
-
-  const yearlyPrice = source.pricePerYearString ?? source.priceString;
-  const monthlyApprox = source.pricePerMonthString;
-  if (monthlyApprox) return `then ${yearlyPrice}/yr(~${monthlyApprox}/mo)`;
-  return `then ${yearlyPrice}/yr`;
-}
-
-function getIntroSummaryLabel(pkg: PurchasesPackage | null) {
-  const label = getIntroPeriodLabel(pkg).toLowerCase();
-  if (label.startsWith('1 month')) return 'month';
-  return label;
-}
-
-export default function SalesScreen() {
+export default function SalesScreen({ onDismiss, source = 'app' }: SalesScreenProps) {
+  const leave = () => {
+    if (onDismiss) onDismiss();
+    else router.back();
+  };
   const insets = useSafeAreaInsets();
-  const [selectedPlan, setSelectedPlan] = useState<PlanId>('trial');
+  const [plans, setPlans] = useState<PaywallPlan[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dealPackage, setDealPackage] = useState<PaywallPlan['pkg'] | null>(null);
+  const [dealCopy, setDealCopy] = useState<Awaited<ReturnType<typeof loadPaywall>>['deal']>(null);
+  const [dealOpen, setDealOpen] = useState(false);
+  const [dealSeen, setDealSeen] = useState(source === 'app');
   const [showTitle, setShowTitle] = useState(false);
   const [visibleBenefitCount, setVisibleBenefitCount] = useState(0);
   const [showPricingOptions, setShowPricingOptions] = useState(false);
   const [showPriceSummary, setShowPriceSummary] = useState(false);
   const [showContinueButton, setShowContinueButton] = useState(false);
-  const [trialPackage, setTrialPackage] = useState<PurchasesPackage | null>(null);
-  const [introPackage, setIntroPackage] = useState<PurchasesPackage | null>(null);
-  const [annualPackage, setAnnualPackage] = useState<PurchasesPackage | null>(null);
   const [isLoadingPricing, setIsLoadingPricing] = useState(true);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const titleOpacity = useRef(new Animated.Value(0)).current;
@@ -101,22 +91,57 @@ export default function SalesScreen() {
     }
   };
 
-  const handlePurchase = async () => {
-    const pkg = selectedPlan === 'trial' ? trialPackage : introPackage;
-    if (!pkg) {
+  const openDeal = () => {
+    setDealOpen(true);
+    void startDealTimer();
+  };
+
+  const dealEndsAt = useDealEndsAt();
+  useEffect(() => {
+    if (!dealPackage || !dealCopy || dealEndsAt === null || !offerShouldOpen()) return;
+    setDealOpen(true);
+  }, [dealPackage, dealCopy, dealEndsAt]);
+
+  const closePaywall = () => {
+    if (isPurchasing) return;
+    if (source === 'onboarding') {
+      if (dealPackage && dealCopy && !onboardingDealDeclined && !dealExpired()) {
+        openDeal();
+        return;
+      }
+      leave();
+      return;
+    }
+    if (dealPackage && dealCopy && !dealSeen && !dealExpired()) {
+      setDealSeen(true);
+      void SecureStore.setItemAsync(APP_DEAL_SEEN_KEY, '1').catch(() => undefined);
+      openDeal();
+      return;
+    }
+    dismissPaywallForSession();
+    leave();
+  };
+
+  const declineDeal = () => {
+    dismissOfferForSession();
+    if (source === 'onboarding') onboardingDealDeclined = true;
+    else dismissPaywallForSession();
+    leave();
+  };
+
+  const handlePurchase = async (pkg?: PaywallPlan['pkg'] | null) => {
+    const selected = pkg ?? plans.find((plan) => plan.id === selectedId)?.pkg ?? plans[0]?.pkg;
+    if (!selected) {
       Alert.alert('Unavailable', 'This plan is not available right now. Please try again later.');
       return;
     }
     setIsPurchasing(true);
     try {
-      const { customerInfo } = await Purchases.purchasePackage(pkg);
-      if (hasPremiumEntitlement(customerInfo)) {
-        notifyPremiumStatusChanged(true);
-        router.back();
-      }
+      const active = await purchasePackage(selected);
+      if (active) leave();
     } catch (error: any) {
-      if (error.userCancelled) return;
-      Alert.alert('Purchase failed', error.message ?? 'Something went wrong. Please try again.');
+      if (error?.userCancelled) return;
+      Alert.alert('Purchase failed', error?.message ?? 'Something went wrong. Please try again.');
     } finally {
       setIsPurchasing(false);
     }
@@ -124,11 +149,10 @@ export default function SalesScreen() {
 
   const handleRestorePurchases = async () => {
     try {
-      const customerInfo = await Purchases.restorePurchases();
-      if (hasPremiumEntitlement(customerInfo)) {
-        notifyPremiumStatusChanged(true);
+      const restored = await restorePurchases();
+      if (restored) {
         Alert.alert('Restored', 'Your premium access has been restored.');
-        router.back();
+        leave();
       } else {
         Alert.alert('No Subscription Found', 'We could not find an active subscription for your account.');
       }
@@ -138,19 +162,28 @@ export default function SalesScreen() {
   };
 
   useEffect(() => {
-    const loadPaywall = async () => {
+    let cancelled = false;
+    if (source === 'app') {
+      SecureStore.getItemAsync(APP_DEAL_SEEN_KEY)
+        .then((seen) => { if (!cancelled) setDealSeen(seen === '1'); })
+        .catch(() => { if (!cancelled) setDealSeen(false); });
+    }
+    const load = async () => {
       try {
         const userId = await getOrCreateUserId();
-        const packages = await getPaywallPackages(userId);
-        setTrialPackage(packages.trialPackage);
-        setIntroPackage(packages.introPackage);
-        setAnnualPackage(packages.annualPackage);
+        const content = await loadPaywall(source, userId);
+        if (cancelled) return;
+        setPlans(content.plans);
+        setSelectedId(content.plans[0]?.id ?? null);
+        setDealPackage(content.dealPackage);
+        setDealCopy(content.deal);
       } finally {
-        setIsLoadingPricing(false);
+        if (!cancelled) setIsLoadingPricing(false);
       }
     };
-    loadPaywall();
-  }, []);
+    void load();
+    return () => { cancelled = true; };
+  }, [source]);
 
   const benefits = useMemo(() => [
     'Start with a free trial',
@@ -223,40 +256,17 @@ export default function SalesScreen() {
     };
   }, [benefits]);
 
-  const trialCardSubtitle = useMemo(() => getTrialPeriodLabel(trialPackage), [trialPackage]);
-  const introCardTitle = '1 month';
-  const introCardSubtitle = useMemo(
-    () => introPackage?.product.introPrice?.priceString ?? introPackage?.product.priceString ?? '€0.99',
-    [introPackage],
-  );
-
-  const priceParts = useMemo(() => {
-    if (selectedPlan === 'trial') {
-      const trialLabel = getTrialPeriodLabel(trialPackage).toLowerCase();
-      const renewalText = getAnnualRenewalText(annualPackage, trialPackage);
-      return {
-        prefix: `${trialLabel} free, then just `,
-        price: renewalText.replace(/^then /, '').split('/')[0],
-        suffix: '/' + (renewalText.replace(/^then /, '').split('/').slice(1).join('/')),
-      };
-    }
-
-    const introPrice = introPackage?.product.introPrice?.priceString ?? introPackage?.product.priceString ?? '€0.99';
-    const renewalText = getAnnualRenewalText(annualPackage, introPackage);
-    const normalizedRenewal = renewalText.replace(/^then /, '');
-    return {
-      prefix: `1st month ${introPrice}, then `,
-      price: normalizedRenewal.split('/')[0],
-      suffix: '/' + (normalizedRenewal.split('/').slice(1).join('/')),
-    };
-  }, [selectedPlan, trialPackage, introPackage, annualPackage]);
+  const selected = plans.find((plan) => plan.id === selectedId) ?? plans[0];
+  const continueLabel = source === 'onboarding'
+    ? (selected?.due ? 'Try for free' : `Redeem 30 days for ${selected?.price ?? ''}`.trim())
+    : 'Continue';
 
   return (
     <View style={styles.container}>
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 44 },
+          { paddingBottom: insets.bottom + 24 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -268,14 +278,11 @@ export default function SalesScreen() {
             imageStyle={styles.heroImageInner}
           >
             <TouchableOpacity
-              onPress={() => {
-                dismissPaywallForSession();
-                router.back();
-              }}
+              onPress={closePaywall}
               hitSlop={12}
               style={[styles.heroCancelButton, { top: insets.top + Spacing.xs }]}
             >
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={styles.cancelText}>×</Text>
             </TouchableOpacity>
             <LinearGradient
               colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.65)', '#000']}
@@ -296,15 +303,15 @@ export default function SalesScreen() {
             {benefits.slice(0, visibleBenefitCount).map((benefit, index) => (
               <Animated.View style={{ opacity: benefitOpacities[index] }} key={benefit}>
                 <View style={styles.benefitRow}>
-                <Ionicons name="checkmark-sharp" size={20} color="#fff" />
-                <Text
-                  style={styles.benefitText}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.82}
-                >
-                  {benefit}
-                </Text>
+                  <Ionicons name="checkmark-sharp" size={20} color="#fff" />
+                  <Text
+                    style={styles.benefitText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    {benefit}
+                  </Text>
                 </View>
               </Animated.View>
             ))}
@@ -315,93 +322,85 @@ export default function SalesScreen() {
               <Animated.View style={{ opacity: pricingOptionsOpacity }}>
                 {isLoadingPricing ? (
                   <View style={styles.pricingLoader}>
-                  <ActivityIndicator color={Colors.primary} />
+                    <ActivityIndicator color={Colors.primary} />
                   </View>
                 ) : (
-                  <View style={styles.planRow}>
-                    <TouchableOpacity
-                      style={[styles.planCard, styles.planCardLeft, selectedPlan === 'trial' && styles.planCardSelected]}
-                      onPress={() => setSelectedPlan('trial')}
-                      activeOpacity={0.8}
-                    >
-                      <View>
-                        <Text style={styles.planTitle}>Free</Text>
-                        <Text style={styles.planSubtitle}>{trialCardSubtitle}</Text>
-                      </View>
-                      <View style={[styles.radio, selectedPlan === 'trial' && styles.radioActive]}>
-                        {selectedPlan === 'trial' && <View style={styles.radioDot} />}
-                      </View>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.planCard, styles.planCardRight, selectedPlan === 'intro' && styles.planCardSelected]}
-                      onPress={() => setSelectedPlan('intro')}
-                      activeOpacity={0.8}
-                    >
-                      <View>
-                        <Text style={styles.planTitle}>{introCardTitle}</Text>
-                        <Text style={styles.planSubtitle}>{introCardSubtitle}</Text>
-                      </View>
-                      <View style={[styles.radio, selectedPlan === 'intro' && styles.radioActive]}>
-                        {selectedPlan === 'intro' && <View style={styles.radioDot} />}
-                      </View>
-                    </TouchableOpacity>
+                  <View style={styles.planList}>
+                    {plans.length === 0 ? (
+                      <Text style={styles.emptyPlans}>Plans are not available right now. Check your connection and try again.</Text>
+                    ) : null}
+                    {plans.map((plan) => {
+                      const on = plan.id === selected?.id;
+                      return (
+                        <TouchableOpacity
+                          key={plan.id}
+                          style={[styles.planCard, on && styles.planCardSelected]}
+                          onPress={() => setSelectedId(plan.id)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={styles.planCopy}>
+                            <Text style={styles.planTitle}>{plan.price}</Text>
+                            <Text style={styles.planSubtitle}>{plan.due ? '3 day trial' : '30-Day trial'}</Text>
+                          </View>
+                          <View style={[styles.radio, on && styles.radioActive]}>
+                            {on ? <View style={styles.radioDot} /> : null}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
               </Animated.View>
-
-              {showPriceSummary && (
-                <Animated.View style={{ opacity: priceSummaryOpacity }}>
-                  <Text
-                    style={styles.priceSummary}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.72}
-                  >
-                    <Text style={styles.priceDim}>{priceParts.prefix}</Text>
-                    <Text style={styles.priceHighlight}>{priceParts.price}</Text>
-                    <Text style={styles.priceDim}>{priceParts.suffix}</Text>
-                  </Text>
-                </Animated.View>
-              )}
 
               {showContinueButton && (
                 <Animated.View style={{ opacity: continueButtonOpacity }}>
                   <TouchableOpacity
                     style={styles.continueButton}
                     activeOpacity={0.85}
-                    onPress={handlePurchase}
-                    disabled={isPurchasing}
+                    onPress={() => { void handlePurchase(); }}
+                    disabled={isPurchasing || !selected}
                   >
                     {isPurchasing ? (
                       <ActivityIndicator color="#0d0d0d" />
                     ) : (
-                      <Text style={styles.continueButtonText}>Continue</Text>
+                      <Text style={styles.continueButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {continueLabel}
+                      </Text>
                     )}
                   </TouchableOpacity>
+                  <Text style={styles.priceSummary}>{selected?.note || ' '}</Text>
+                  <View style={styles.legalRow}>
+                    <TouchableOpacity onPress={() => openExternalUrl(TERMS_URL)}>
+                      <Text style={styles.legalText}>Terms</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.legalSeparator}>·</Text>
+                    <TouchableOpacity onPress={() => openExternalUrl(PRIVACY_URL)}>
+                      <Text style={styles.legalText}>Privacy</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.legalSeparator}>·</Text>
+                    <TouchableOpacity onPress={() => openExternalUrl(SUBSCRIPTION_TERMS_URL)}>
+                      <Text style={styles.legalText}>Subscription Terms</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.legalSeparator}>·</Text>
+                    <TouchableOpacity onPress={handleRestorePurchases}>
+                      <Text style={styles.legalText}>Restore</Text>
+                    </TouchableOpacity>
+                  </View>
                 </Animated.View>
               )}
             </>
           )}
         </View>
       </ScrollView>
-      <View style={[styles.legalRow, { bottom: insets.bottom + Spacing.sm }]}>
-        <TouchableOpacity onPress={() => openExternalUrl(TERMS_URL)}>
-          <Text style={styles.legalText}>Terms of Use</Text>
-        </TouchableOpacity>
-        <Text style={styles.legalSeparator}>|</Text>
-        <TouchableOpacity onPress={() => openExternalUrl(PRIVACY_URL)}>
-          <Text style={styles.legalText}>Privacy Policy</Text>
-        </TouchableOpacity>
-        <Text style={styles.legalSeparator}>|</Text>
-        <TouchableOpacity onPress={() => openExternalUrl(SUBSCRIPTION_TERMS_URL)}>
-          <Text style={styles.legalText}>Subscription Terms</Text>
-        </TouchableOpacity>
-        <Text style={styles.legalSeparator}>|</Text>
-        <TouchableOpacity onPress={handleRestorePurchases}>
-          <Text style={styles.legalText}>Restore</Text>
-        </TouchableOpacity>
-      </View>
+      {dealOpen && dealCopy ? (
+        <DealSheet
+          deal={dealCopy}
+          busy={isPurchasing}
+          onClaim={() => { void handlePurchase(dealPackage); }}
+          onClose={declineDeal}
+          onRestore={() => { void handleRestorePurchases(); }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -415,9 +414,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   cancelText: {
-    color: '#cfcfcf',
-    fontSize: FontSizes.sm,
-    fontWeight: '500',
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '400',
   },
   heroWrapper: {
     width: '100%',
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
   },
   heroCancelButton: {
     position: 'absolute',
-    right: Spacing.md,
+    left: Spacing.md,
     zIndex: 2,
   },
   heroImageInner: {
@@ -473,12 +473,17 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 19,
   },
-  planRow: {
-    flexDirection: 'row',
-    marginBottom: 44,
+  planList: {
+    gap: 10,
+    marginBottom: 20,
+  },
+  emptyPlans: {
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+    marginVertical: Spacing.lg,
+    fontSize: FontSizes.sm,
   },
   planCard: {
-    flex: 1,
     minHeight: 86,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
@@ -490,15 +495,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#090909',
   },
-  planCardLeft: {
-    marginRight: Spacing.xs,
-  },
-  planCardRight: {
-    marginLeft: Spacing.xs,
-  },
   planCardSelected: {
     borderColor: Colors.primary,
     backgroundColor: 'rgba(200,148,60,0.2)',
+  },
+  planCopy: {
+    flex: 1,
+    marginRight: Spacing.sm,
+    gap: 2,
   },
   planTitle: {
     color: '#fff',
@@ -531,15 +535,10 @@ const styles = StyleSheet.create({
   },
   priceSummary: {
     textAlign: 'center',
-    marginTop: 8,
-    marginBottom: Spacing.md,
-  },
-  priceHighlight: {
-    color: '#fff',
-    fontSize: FontSizes.md,
-    fontWeight: '700',
-  },
-  priceDim: {
+    marginTop: 4,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    lineHeight: 20,
     color: 'rgba(255,255,255,0.55)',
     fontSize: FontSizes.sm,
     fontWeight: '500',
@@ -549,7 +548,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    marginBottom: 12,
   },
   continueButtonText: {
     color: '#0d0d0d',
@@ -557,14 +556,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   legalRow: {
-    position: 'absolute',
-    left: Spacing.md,
-    right: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    rowGap: 2,
+    rowGap: 6,
   },
   legalText: {
     color: 'rgba(255,255,255,0.55)',

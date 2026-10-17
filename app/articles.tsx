@@ -13,11 +13,13 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BorderRadius, Colors, FontSizes, Spacing } from '../constants/theme';
 import { useArticles } from '../hooks/useArticles';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
 
 const CARD_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
 const IMAGE_HEIGHT = 140;
 
 export default function ArticlesScreen() {
+  useRequirePremium();
   const insets = useSafeAreaInsets();
   const { articles } = useArticles();
 

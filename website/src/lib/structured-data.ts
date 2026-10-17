@@ -13,6 +13,7 @@ export function appJsonLd() {
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     url: SITE_URL,
     downloadUrl: [APP_STORE_URL, PLAY_STORE_URL],
+    sameAs: [APP_STORE_URL, PLAY_STORE_URL],
     image: `${SITE_URL}/og-default.png`,
   };
 }

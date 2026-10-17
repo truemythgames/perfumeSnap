@@ -4,7 +4,7 @@ import Navigation from "@/components/Navigation.astro";
 import Footer from "@/components/Footer.astro";
 import StickyDownload from "@/components/StickyDownload.astro";
 import { SITE_NAME, SITE_URL, DEFAULT_DESCRIPTION } from "@/lib/seo";
-import { APP_STORE_ID } from "@/lib/storeLinks";
+import { APP_STORE_ID, PLAY_STORE_PACKAGE_ID } from "@/lib/storeLinks";
 
 interface Props {
   title?: string;
@@ -61,6 +61,7 @@ const canonicalUrl = canonical ?? Astro.url.href;
 
     <!-- Smart App Banner -->
     <meta name="apple-itunes-app" content={`app-id=${APP_STORE_ID}`} />
+    <meta name="google-play-app" content={`app-id=${PLAY_STORE_PACKAGE_ID}`} />
 
     <!-- Favicons -->
     <link rel="icon" href="/favicon.ico" sizes="48x48" />

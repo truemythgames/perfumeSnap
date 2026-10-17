@@ -1,8 +1,10 @@
 import React, { useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import CollectionDetailView from '../components/CollectionDetailView';
+import { useRequirePremium } from '../hooks/usePremiumStatus';
 
 export default function CollectionDetailRoute() {
+  useRequirePremium();
   const params = useLocalSearchParams<{ prefillKey?: string; imageUri?: string }>();
 
   const prefillKey = useMemo(() => {

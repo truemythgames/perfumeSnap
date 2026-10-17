@@ -7,7 +7,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'PerfumeSnap',
   slug: 'perfumeSnap',
-  version: '1.0.0',
+  version: '1.1.0',
   orientation: 'portrait',
   icon: './assets/logo.png',
   userInterfaceStyle: 'dark',
@@ -38,11 +38,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     bundleIdentifier: 'app.perfumeSnap',
     appStoreUrl: 'https://apps.apple.com/app/id6770087818',
-    buildNumber: '10',
+    buildNumber: '13',
     googleServicesFile: './GoogleService-Info.plist',
   },
   android: {
-    versionCode: 12,
+    versionCode: 13,
     googleServicesFile: './google-services.json',
     adaptiveIcon: {
       foregroundImage: './assets/logo.png',
