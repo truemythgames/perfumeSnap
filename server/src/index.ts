@@ -543,7 +543,8 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
         Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'gpt-6.1-sol',
+        reasoning_effort: 'low',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           {
@@ -560,8 +561,7 @@ async function handleIdentify(request: Request, env: Env): Promise<Response> {
             ],
           },
         ],
-      max_tokens: 3000,
-      temperature: 0.2,
+      max_completion_tokens: 4000,
     }),
   });
 
@@ -615,7 +615,8 @@ async function handleLookup(request: Request, env: Env): Promise<Response> {
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: 'gpt-6.1-sol',
+      reasoning_effort: 'low',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         {
@@ -623,8 +624,7 @@ async function handleLookup(request: Request, env: Env): Promise<Response> {
           content: `Provide detailed and comprehensive information about this perfume: "${query}". Include layering suggestions, affordable alternatives (dupes), and popularity status. Do NOT include prices — live retailer pricing is fetched separately. Respond with the same JSON format as if you had identified it from a photo.`,
         },
       ],
-      max_tokens: 3000,
-        temperature: 0.2,
+      max_completion_tokens: 4000,
       }),
     });
 
