@@ -55,30 +55,35 @@ export default function RootLayout() {
       .then(async (val) => {
         const done = val === '1';
         setOnboardingDone(done);
-        if (done) {
-          initCrashlytics();
-          initFacebookSDK();
-          analytics().setAnalyticsCollectionEnabled(true);
-          analytics().logEvent('app_open');
-
-          const userId = await getOrCreateUserId();
-          await initRevenueCat(userId);
-
-          if (!isPaywallDismissedForSession()) {
-            try {
-              const premium = await isPremiumUser(userId);
-              await whenDealTimerReady();
-              if (!premium && !offerShouldOpen()) {
-                dismissPaywallForSession();
-                setShowSalesOnMount(true);
-              }
-            } catch { /* ignore */ }
-          }
-
+        if (!done) {
           setAppReady(true);
+          return;
         }
+        initCrashlytics();
+        initFacebookSDK();
+        analytics().setAnalyticsCollectionEnabled(true);
+        analytics().logEvent('app_open');
+
+        const userId = await getOrCreateUserId();
+        await initRevenueCat(userId);
+
+        if (!isPaywallDismissedForSession()) {
+          try {
+            const premium = await isPremiumUser(userId);
+            await whenDealTimerReady();
+            if (!premium && !offerShouldOpen()) {
+              dismissPaywallForSession();
+              setShowSalesOnMount(true);
+            }
+          } catch { /* ignore */ }
+        }
+
+        setAppReady(true);
       })
-      .catch(() => setOnboardingDone(false));
+      .catch(() => {
+        setOnboardingDone(false);
+        setAppReady(true);
+      });
   }, []);
 
   useEffect(() => {

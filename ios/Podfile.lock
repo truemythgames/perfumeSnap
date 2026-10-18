@@ -43,8 +43,6 @@ PODS:
     - ZXingObjC/PDF417
   - ExpoFileSystem (19.0.22):
     - ExpoModulesCore
-  - ExpoFont (14.0.11):
-    - ExpoModulesCore
   - ExpoHaptics (15.0.8):
     - ExpoModulesCore
   - ExpoHead (6.0.23):
@@ -93,7 +91,7 @@ PODS:
     - ExpoModulesCore
   - ExpoTrackingTransparency (6.0.8):
     - ExpoModulesCore
-  - ExpoVideo (55.0.17):
+  - ExpoVideo (3.0.16):
     - ExpoModulesCore
   - ExpoWebBrowser (15.0.11):
     - ExpoModulesCore
@@ -2294,7 +2292,6 @@ DEPENDENCIES:
   - ExpoBlur (from `../node_modules/expo-blur/ios`)
   - ExpoCamera (from `../node_modules/expo-camera/ios`)
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
-  - ExpoFont (from `../node_modules/expo/node_modules/expo-font/ios`)
   - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
   - ExpoHead (from `../node_modules/expo-router/ios`)
   - ExpoImageManipulator (from `../node_modules/expo-image-manipulator/ios`)
@@ -2444,8 +2441,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-camera/ios"
   ExpoFileSystem:
     :path: "../node_modules/expo-file-system/ios"
-  ExpoFont:
-    :path: "../node_modules/expo/node_modules/expo-font/ios"
   ExpoHaptics:
     :path: "../node_modules/expo-haptics/ios"
   ExpoHead:
@@ -2641,7 +2636,6 @@ SPEC CHECKSUMS:
   ExpoBlur: 688c53d5d26575cbb6c72e7fbd4caef8d8cfadf6
   ExpoCamera: 44705f35b32741582d00c69187c8ee59669ed46e
   ExpoFileSystem: dc2c00cc568d432efc36ea1d994c25050909d23d
-  ExpoFont: c625dbd97ed57e9089b172b2a7bb99003d074664
   ExpoHaptics: 7240781406f4563c3f4eb1e72864302a8c643fd0
   ExpoHead: 3f6ed6cbda48f13bcaddae98f8e5dc525dcfb34f
   ExpoImageManipulator: 099b82d913588b3984253f186b84b129792cf2e3
@@ -2654,7 +2648,7 @@ SPEC CHECKSUMS:
   ExpoSplashScreen: 72fbc6dd9d6404dd9d0725a56c9ac1383bc0b14f
   ExpoStoreReview: 000240ba376090a9a1d14f58bc78daf300c3fae3
   ExpoTrackingTransparency: 1096e9082787daf71904fac651c6e73a3179f5b1
-  ExpoVideo: ea84566ae0ad3766b3fd7266529febafd80ebc38
+  ExpoVideo: bd6b4f7de4ec34ba73470b8f955625e821048106
   ExpoWebBrowser: 93acaae9a851370332e0c1310cbcd1437c0b4377
   FBAEMKit: 2a6b529993713c185b02bc36f8c91129bf78dfb0
   FBLazyVector: e95a291ad2dadb88e42b06e0c5fb8262de53ec12
@@ -2762,6 +2756,6 @@ SPEC CHECKSUMS:
   Yoga: 3fd22c2cae22d7a2b0f0b538f55f7c2a17dc94d5
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: dedc69996ef3ef3235a92f8d1acd677202d091d6
+PODFILE CHECKSUM: 50a7d07116a070a007ab10eb6a94d325e97b1205
 
 COCOAPODS: 1.14.3
