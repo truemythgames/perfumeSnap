@@ -38,11 +38,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     bundleIdentifier: 'app.perfumeSnap',
     appStoreUrl: 'https://apps.apple.com/app/id6770087818',
-    buildNumber: '14',
+    buildNumber: '17',
     googleServicesFile: './GoogleService-Info.plist',
   },
   android: {
-    versionCode: 14,
+    versionCode: 17,
     googleServicesFile: './google-services.json',
     adaptiveIcon: {
       foregroundImage: './assets/logo.png',

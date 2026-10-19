@@ -37,7 +37,7 @@ import * as Haptics from 'expo-haptics';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 import { Colors, Spacing, FontSizes, BorderRadius } from '../constants/theme';
 import UserReviewsScreen from './UserReviewsScreen';
-import SalesScreen from '../app/sales';
+import SalesScreen from './SalesScreen';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
